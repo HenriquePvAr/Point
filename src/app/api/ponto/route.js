@@ -1,32 +1,33 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+// Importa a conexão única do seu arquivo lib/prisma para evitar travar o banco
+import prisma from '../../lib/prisma'; 
 
-// Conexão direta com o banco
-const prisma = new PrismaClient();
-
-// Seus IPs permitidos (Lembre-se: se seu IP mudar, tem que atualizar aqui!)
+// === LISTA DE IPS PERMITIDOS (TRAVA ATIVA) ===
 const IPS_PERMITIDOS = [
     "::1", 
     "127.0.0.1", 
-    "45.236.9.18", // Seu IP atual
-    "152.237.129.4" // Adicionei aquele outro que você mandou antes, por garantia
+    "45.236.9.18",    // IP Antigo
+    "152.237.129.4"   // Seu IP atual (Adicionado)
 ];
 
 export async function POST(request) {
-    // Tenta pegar o IP real
+    // 1. Tenta pegar o IP real
     let ip = request.headers.get("x-forwarded-for") || "::1";
     
-    // --- CORREÇÃO IMPORTANTE PARA VERCEL ---
+    // --- TRATAMENTO PARA VERCEL ---
     // A Vercel pode mandar "ip_usuario, ip_proxy". Pegamos só o primeiro.
-    ip = ip.split(',')[0].trim();
-    // ---------------------------------------
+    if (ip.includes(',')) {
+        ip = ip.split(',')[0].trim();
+    }
+    // ------------------------------
 
+    // Limpeza de prefixo IPv6 local
     if (ip.startsWith("::ffff:")) ip = ip.replace("::ffff:", "");
     if (!ip) ip = "127.0.0.1";
 
     console.log(`Tentativa de ponto pelo IP: ${ip}`);
 
-    // VERIFICAÇÃO DE SEGURANÇA
+    // 2. VERIFICAÇÃO DE SEGURANÇA (TRAVA ATIVA)
     if (!IPS_PERMITIDOS.includes(ip)) {
         return NextResponse.json({ 
             success: false, 
