@@ -1,0 +1,43 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id                Int      @id @default(autoincrement())
+  nome              String
+  cpf               String   @unique
+  email             String?  @unique
+  senha             String
+  cargo             String?
+  status            String   @default("ativo")
+  primeiroAcesso    Boolean  @default(true)
+  tipo              String   @default("funcionario")
+  codigoRecuperacao String?
+
+  pontos    Ponto[]
+  mensagens Mensagem[]
+}
+
+model Ponto {
+  id        Int      @id @default(autoincrement())
+  data      DateTime @default(now())
+  tipo      String   
+  ip        String?
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  usuarioId Int
+}
+
+model Mensagem {
+  id        Int      @id @default(autoincrement())
+  dataIso   String   
+  texto     String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  usuarioId Int
+}

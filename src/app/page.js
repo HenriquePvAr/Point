@@ -172,25 +172,43 @@ export default function Page() {
       } catch(e) { toast.error("Erro no servidor."); }
   }
 
-  // RECUPERAÇÃO DE SENHA - PASSO 2 (REDEFINIR)
+ // RECUPERAÇÃO DE SENHA - PASSO 2 (REDEFINIR)
+  // --- VERSÃO CORRIGIDA ---
   async function redefinirSenhaRecuperacao() {
+      // Validação básica
       if(!codigoRecuperar || !novaSenhaRecuperar) return toast.warning("Preencha o código e a nova senha.");
+      
       try {
-          const res = await fetch("/api/auth/recuperar", { 
+          // AQUI ESTÁ A CORREÇÃO: Apontando para o arquivo que grava no banco
+          const res = await fetch("/api/auth/nova-senha", { 
               method: "POST", 
-              body: JSON.stringify({ email: emailRecuperar, codigo: codigoRecuperar, novaSenha: novaSenhaRecuperar }) 
+              body: JSON.stringify({ 
+                  email: emailRecuperar, 
+                  codigo: codigoRecuperar, 
+                  novaSenha: novaSenhaRecuperar 
+              }) 
           });
+
           const data = await res.json();
+          
           if(data.success) {
-              toast.success("Senha redefinida! Faça login agora.");
+              toast.success("Senha redefinida com sucesso! Faça login.");
+              
+              // Limpa os campos e volta para a tela de login
               setViewRecuperar(false);
               setPassoRecuperar(1);
-              setSenha("");
-              setCpf("");
-          } else { toast.error(data.message); }
-      } catch(e) { toast.error("Erro ao redefinir."); }
+              setSenha(""); // Limpa o campo de senha do login para não confundir
+              setCodigoRecuperar("");
+              setNovaSenhaRecuperar("");
+              setCpf(""); 
+          } else { 
+              toast.error(data.message); 
+          }
+      } catch(e) { 
+          console.error(e);
+          toast.error("Erro ao tentar salvar a senha."); 
+      }
   }
-
   // ==========================================================
   // 5. FUNÇÕES DE DADOS (PONTO E MENSAGENS)
   // ==========================================================
@@ -265,7 +283,7 @@ export default function Page() {
   function verificarPermissao(tipoBotao) {
       if (ultimoRegistroHoje === 'Saída') return false; // Dia encerrado
       if (tipoBotao === 'Entrada') return ultimoRegistroHoje === null;
-      if (tipoBotao === 'Ida Intervalo') return ultimoRegistroHoje === 'Entrada' || ultimoRegistroHoje === 'Volta Intervalo'; // Permite múltiplos intervalos se necessário, mas logicamente segue a entrada
+      if (tipoBotao === 'Ida Intervalo') return ultimoRegistroHoje === 'Entrada' || ultimoRegistroHoje === 'Volta Intervalo'; // Permite múltiplos intervalos se necessário
       if (tipoBotao === 'Volta Intervalo') return ultimoRegistroHoje === 'Ida Intervalo';
       if (tipoBotao === 'Saída') return ultimoRegistroHoje === 'Entrada' || ultimoRegistroHoje === 'Volta Intervalo';
       return false;
@@ -374,7 +392,7 @@ export default function Page() {
                                 </div>
                                 <button onClick={enviarCodigoRecuperacao} className="w-full bg-[#1351b4] text-white font-bold py-3 rounded hover:bg-[#0c3b85] transition shadow-md">Enviar Código</button>
                              </>
-                         ) : (
+                          ) : (
                              <>
                                 <div className="bg-blue-50 p-3 rounded mb-4 text-xs text-blue-800 border border-blue-100 flex items-start gap-2">
                                     <Mail size={16} className="mt-0.5"/>
@@ -398,9 +416,9 @@ export default function Page() {
 
                                 <button onClick={redefinirSenhaRecuperacao} className="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition shadow-md">Redefinir Senha</button>
                              </>
-                         )}
+                          )}
 
-                         <button onClick={() => { setViewRecuperar(false); setPassoRecuperar(1); }} className="w-full mt-4 text-sm text-gray-400 hover:text-gray-600 border-t pt-4">Cancelar e Voltar</button>
+                          <button onClick={() => { setViewRecuperar(false); setPassoRecuperar(1); }} className="w-full mt-4 text-sm text-gray-400 hover:text-gray-600 border-t pt-4">Cancelar e Voltar</button>
                     </>
                 )}
             </div>
@@ -743,7 +761,5 @@ function gerarDiasDoMesSelecionado(mes, ano, historico) {
             pontos: pontosDoDia 
         });
     }
-    // Retorna reverso (Dia 1 primeiro ou último? Aqui está normal: 1..30)
-    // Se quiser o dia 30 primeiro, use .reverse() no final.
     return dias; 
 }

@@ -1,39 +1,108 @@
 import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
 
-// Banco de dados simulado (agora com E-MAIL)
-if (!global.usuarios) {
-    global.usuarios = [
-        { id: 1, nome: "Henrique Paiva", cpf: "07253084276", email: "henrique@teste.com", senha: "123", cargo: "Analista de TI", status: "ativo", primeiroAcesso: false, tipo: "funcionario" },
-        { id: 999, nome: "Administrador", cpf: "admin", email: "admin@sistema.com", senha: "123", cargo: "Gestor", status: "ativo", primeiroAcesso: false, tipo: "admin" }
-    ];
-}
+const prisma = new PrismaClient();
 
+// LISTAR USUÁRIOS (GET)
 export async function GET() {
-    // Retorna lista sem a senha
-    const lista = global.usuarios.map(({ senha, ...resto }) => resto);
-    return NextResponse.json(lista);
-}
-
-export async function POST(request) {
-    const body = await request.json();
-    if (global.usuarios.find(u => u.cpf === body.cpf)) {
-        return NextResponse.json({ success: false, message: "CPF já existe." }, { status: 400 });
+    try {
+        const usuarios = await prisma.usuario.findMany({
+            orderBy: { nome: 'asc' }
+        });
+        const seguros = usuarios.map(({ senha, ...resto }) => resto);
+        return NextResponse.json(seguros);
+    } catch (error) {
+        return NextResponse.json({ error: "Erro ao buscar usuários" }, { status: 500 });
     }
-    // Adiciona usuário novo (com e-mail vazio se não vier)
-    const novo = { id: Date.now(), ...body, senha: "pinguim", primeiroAcesso: true, status: "ativo", tipo: "funcionario" };
-    global.usuarios.push(novo);
-    return NextResponse.json({ success: true, usuario: novo });
 }
 
-// NOVA FUNÇÃO: EDITAR USUÁRIO
+// CRIAR USUÁRIO (POST)
+export async function POST(request) {
+    try {
+        const body = await request.json();
+        
+        console.log("Criando usuário:", body.nome); 
+
+        // 1. Validação Básica
+        if (!body.cpf) {
+            return NextResponse.json({ success: false, message: "CPF é obrigatório." }, { status: 400 });
+        }
+        
+        // Limpeza do CPF
+        const cpfString = String(body.cpf);
+        const cpfLimpo = cpfString.replace(/\D/g, "");
+
+        // 2. Verifica se já existe
+        const existe = await prisma.usuario.findFirst({
+            where: { OR: [{ cpf: cpfLimpo }, { email: body.email }] }
+        });
+
+        if (existe) {
+            return NextResponse.json({ success: false, message: "Usuário já cadastrado (CPF ou Email duplicado)." }, { status: 400 });
+        }
+
+        // 3. CRIAÇÃO COM SENHA PADRÃO "123"
+        // O erro estava aqui: body.senha vinha vazio. Agora usamos || "123"
+        const novoUsuario = await prisma.usuario.create({
+            data: {
+                nome: body.nome,
+                cpf: cpfLimpo,
+                email: body.email, 
+                senha: body.senha || "123", // <--- CORREÇÃO AQUI
+                cargo: body.cargo,
+                tipo: body.tipo || "funcionario",
+                status: "ativo"
+            }
+        });
+
+        return NextResponse.json({ success: true, usuario: novoUsuario });
+
+    } catch (error) {
+        console.error("ERRO NO CADASTRO:", error);
+        return NextResponse.json({ success: false, message: "Erro ao criar: " + error.message }, { status: 500 });
+    }
+}
+
+// EDITAR/EXCLUIR (PUT)// EDITAR/EXCLUIR (PUT)
 export async function PUT(request) {
-    const body = await request.json();
-    const index = global.usuarios.findIndex(u => u.id === body.id);
+    try {
+        const body = await request.json();
 
-    if (index === -1) return NextResponse.json({ success: false, message: "Usuário não encontrado." }, { status: 404 });
+        // CASO 1: EXCLUIR
+        if (body.acao === 'excluir') {
+            await prisma.usuario.delete({ where: { id: body.id } });
+            return NextResponse.json({ success: true, message: "Usuário excluído!" });
+        }
 
-    // Atualiza apenas os campos enviados
-    global.usuarios[index] = { ...global.usuarios[index], ...body };
-    
-    return NextResponse.json({ success: true, usuario: global.usuarios[index] });
+        // CASO 2: EDITAR (Correção aqui!)
+        if (body.acao === 'editar') {
+            // Criamos um objeto APENAS com o que pode ser mudado na tela de edição
+            // Isso impede que a senha seja alterada acidentalmente
+            const dadosParaAtualizar = {
+                nome: body.nome,
+                email: body.email,
+                cargo: body.cargo,
+                // Nota: NÃO incluímos 'senha' aqui. O Prisma vai manter a antiga.
+            };
+
+            await prisma.usuario.update({
+                where: { id: body.id },
+                data: dadosParaAtualizar
+            });
+            return NextResponse.json({ success: true, message: "Usuário atualizado!" });
+        }
+        
+        // CASO 3: BLOQUEAR/DESBLOQUEAR
+        if (body.status) {
+             await prisma.usuario.update({
+                where: { id: body.id },
+                data: { status: body.status }
+            });
+            return NextResponse.json({ success: true });
+        }
+
+    } catch (error) {
+        console.error("Erro no PUT:", error);
+        return NextResponse.json({ success: false, message: "Erro na operação." }, { status: 500 });
+    }
 }

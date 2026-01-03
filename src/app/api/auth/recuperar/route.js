@@ -1,91 +1,66 @@
 import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
 import nodemailer from 'nodemailer';
 
-// --- CONFIGURAÇÃO DO E-MAIL ---
-const EMAIL_REMETENTE = "henriquepaiva128@gmail.com"; 
-const SENHA_APP = "wrsh wmoc waln rvrv"; 
+const prisma = new PrismaClient();
 
 export async function POST(request) {
-    const { email, codigo, novaSenha } = await request.json();
+    const { email } = await request.json();
 
-    // 1. Configura o Carteiro (Nodemailer)
-    const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-            user: EMAIL_REMETENTE,
-            pass: SENHA_APP
-        }
-    });
+    try {
+        console.log(`Solicitação de senha para: ${email}`);
 
-    // --- CENÁRIO 1: USUÁRIO PEDIU O CÓDIGO ---
-    if (email && !codigo) {
-        // Busca o usuário na memória
-        const userIndex = global.usuarios.findIndex(u => u.email === email);
-        
-        if (userIndex === -1) {
+        // 1. Procura se o funcionário existe no banco
+        const user = await prisma.usuario.findFirst({
+            where: { email: email }
+        });
+
+        if (!user) {
             return NextResponse.json({ success: false, message: "E-mail não encontrado no sistema." }, { status: 404 });
         }
 
-        // Gera código de 4 números
-        const codigoGerado = Math.floor(1000 + Math.random() * 9000).toString();
+        // 2. Gera o código
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
 
-        // Salva o código no usuário (no servidor)
-        global.usuarios[userIndex].codigoRecuperacao = codigoGerado;
+        // 3. Salva o código no cadastro do funcionário
+        await prisma.usuario.update({
+            where: { id: user.id },
+            data: { codigoRecuperacao: codigo }
+        });
 
-        try {
-            // Envia o e-mail real
-            await transporter.sendMail({
-                from: `"Suporte Pinguim" <${EMAIL_REMETENTE}>`,
-                to: email,
-                subject: 'Código de Recuperação - Pinguim Manoa',
-                html: `
-                    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
-                        <h2 style="color: #1351b4; text-align: center;">Pinguim Manoa</h2>
-                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                        <p style="font-size: 16px;">Olá,</p>
-                        <p style="font-size: 16px;">Recebemos uma solicitação para redefinir sua senha.</p>
-                        <p style="font-size: 16px;">Use o código abaixo para continuar:</p>
-                        <div style="text-align: center; margin: 30px 0;">
-                            <span style="background-color: #f0f4ff; color: #1351b4; font-size: 32px; font-weight: bold; padding: 15px 30px; border-radius: 8px; letter-spacing: 5px; border: 2px solid #1351b4;">
-                                ${codigoGerado}
-                            </span>
-                        </div>
-                        <p style="font-size: 14px; color: #666;">Se você não solicitou isso, ignore este e-mail.</p>
+        // 4. CONFIGURAÇÃO DO CARTEIRO (SEU GMAIL PESSOAL)
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                // Quem ENVIA o e-mail (O Carteiro)
+                user: 'henriquepaiva128@gmail.com', 
+                
+                // A Senha de App gerada neste e-mail (henriquepaiva128@gmail.com)
+                pass: 'vajz ehed czaw ehtd' 
+            }
+        });
+
+        // 5. O ENVIO
+        await transporter.sendMail({
+            from: '"Sistema Ponto" <henriquepaiva128@gmail.com>', // Quem manda
+            to: email, // Quem recebe (o e-mail do funcionário: esbam, hotmail, etc)
+            subject: 'Recuperação de Senha',
+            html: `
+                <div style="font-family: sans-serif; padding: 20px; color: #333;">
+                    <h2 style="color: #071d41;">Olá, ${user.nome}!</h2>
+                    <p>Você pediu para recuperar sua senha? Aqui está seu código:</p>
+                    <div style="background: #eef2ff; padding: 20px; font-size: 28px; font-weight: bold; text-align: center; border-radius: 10px; color: #1351b4; letter-spacing: 5px; margin: 20px 0;">
+                        ${codigo}
                     </div>
-                `
-            });
+                    <p style="font-size: 12px; color: #666;">Copie este código e cole no sistema.</p>
+                </div>
+            `
+        });
 
-            return NextResponse.json({ success: true, message: "Código enviado para seu e-mail!" });
+        return NextResponse.json({ success: true, message: "Código enviado com sucesso!" });
 
-        } catch (error) {
-            console.error("Erro ao enviar e-mail:", error);
-            return NextResponse.json({ success: false, message: "Falha ao enviar e-mail. Verifique a conexão." }, { status: 500 });
-        }
+    } catch (error) {
+        console.error("Erro no envio:", error);
+        return NextResponse.json({ success: false, message: "Erro ao enviar e-mail." }, { status: 500 });
     }
-
-    // --- CENÁRIO 2: USUÁRIO ENVIOU O CÓDIGO E A NOVA SENHA ---
-    if (email && codigo && novaSenha) {
-        const userIndex = global.usuarios.findIndex(u => u.email === email);
-        
-        if (userIndex === -1) {
-            return NextResponse.json({ success: false, message: "Usuário não encontrado." }, { status: 404 });
-        }
-
-        const usuario = global.usuarios[userIndex];
-
-        // Verifica se o código bate
-        if (usuario.codigoRecuperacao !== codigo) {
-            return NextResponse.json({ success: false, message: "Código incorreto ou expirado." }, { status: 400 });
-        }
-
-        // Atualiza a senha
-        global.usuarios[userIndex].senha = novaSenha;
-        
-        // Limpa o código usado
-        delete global.usuarios[userIndex].codigoRecuperacao;
-
-        return NextResponse.json({ success: true, message: "Senha alterada com sucesso!" });
-    }
-
-    return NextResponse.json({ success: false, message: "Dados inválidos." }, { status: 400 });
 }

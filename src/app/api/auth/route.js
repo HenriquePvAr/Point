@@ -1,31 +1,67 @@
 import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
 
-// Garante o Banco de Dados Global
-if (!global.usuarios) {
-    global.usuarios = [
-        { id: 1, nome: "Henrique Paiva", cpf: "07253084276", email: "henrique@teste.com", senha: "123", cargo: "Analista de TI", status: "ativo", primeiroAcesso: false, tipo: "funcionario" },
-        { id: 999, nome: "Administrador", cpf: "admin", email: "admin@sistema.com", senha: "123", cargo: "Gestor", status: "ativo", primeiroAcesso: false, tipo: "admin" }
-    ];
-}
+const prisma = new PrismaClient();
+
+// === LISTA DE IPS PERMITIDOS ===
+const IPS_PERMITIDOS = [
+    '152.237.129.4', // Seu IP Pessoal
+    '::1',           // Localhost (para você testar no seu PC)
+    '127.0.0.1',     // Localhost
+    // '0.0.0.0'     // <-- COLOQUE O IP DA EMPRESA AQUI
+];
 
 export async function POST(request) {
-    const { cpf, senha } = await request.json();
-    const cpfLimpo = cpf.replace(/\D/g, "") || cpf; 
-    
-    const user = global.usuarios.find(u => {
-        const uCpfLimpo = u.cpf.replace(/\D/g, "") || u.cpf;
-        return uCpfLimpo === cpfLimpo && u.senha === senha;
-    });
+    try {
+        // 1. CAPTURA O IP DE QUEM ESTÁ ACESSANDO
+        const ipOriginal = request.headers.get('x-forwarded-for') || 
+                           request.headers.get('x-real-ip') || 
+                           'ip-desconhecido';
+        
+        // Limpa o IP (alguns provedores mandam uma lista de IPs separados por vírgula)
+        const ipCliente = ipOriginal.split(',')[0].trim();
 
-    if (!user) {
-        return NextResponse.json({ success: false, message: "Credenciais inválidas." }, { status: 401 });
+        console.log(`Tentativa de login pelo IP: ${ipCliente}`);
+
+        // 2. VERIFICA SE O IP ESTÁ NA LISTA
+        // Se o seu IP mudar (IP Dinâmico), você precisará atualizar essa lista.
+        if (!IPS_PERMITIDOS.includes(ipCliente)) {
+            console.log("❌ ACESSO BLOQUEADO: IP não autorizado.");
+            return NextResponse.json({ 
+                success: false, 
+                message: "Acesso bloqueado: Este sistema só pode ser acessado na rede da empresa." 
+            }, { status: 403 });
+        }
+
+        const body = await request.json();
+        const { cpf, senha } = body;
+
+        // 3. BUSCA USUÁRIO NO BANCO
+        const user = await prisma.usuario.findUnique({
+            where: { cpf: cpf }
+        });
+
+        if (!user || user.senha !== senha) {
+            return NextResponse.json({ success: false, message: "CPF ou senha incorretos." }, { status: 401 });
+        }
+
+        // Se o usuário estiver inativo no banco
+        if (user.status === 'inativo') {
+            return NextResponse.json({ success: false, message: "Seu acesso foi desativado pelo administrador." }, { status: 403 });
+        }
+
+        return NextResponse.json({
+            success: true,
+            user: {
+                id: user.id,
+                nome: user.nome,
+                tipo: user.tipo,
+                primeiroAcesso: user.primeiroAcesso
+            }
+        });
+
+    } catch (error) {
+        console.error("Erro no login:", error);
+        return NextResponse.json({ success: false, message: "Erro no servidor." }, { status: 500 });
     }
-
-    // --- AQUI ESTÁ A REGRA DE BLOQUEIO ---
-    if (user.status !== 'ativo') {
-        return NextResponse.json({ success: false, message: "Login bloqueado. Contate o RH." }, { status: 403 });
-    }
-
-    const { senha: _, ...userSemSenha } = user;
-    return NextResponse.json({ success: true, user: userSemSenha });
 }
