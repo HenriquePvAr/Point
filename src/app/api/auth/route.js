@@ -4,11 +4,11 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // === LISTA DE IPS PERMITIDOS ===
+  // === LISTA DE IPS PERMITIDOS (TRAVA ATIVA) ===
+// === LISTA DE IPS PERMITIDOS (TRAVA ATIVA) ===
 const IPS_PERMITIDOS = [
-    '152.237.129.4', // Seu IP Pessoal
-    '::1',           // Localhost (para você testar no seu PC)
-    '127.0.0.1',     // Localhost
-    // '0.0.0.0'     // <-- COLOQUE O IP DA EMPRESA AQUI
+    "193.186.4.241", // IP da empresa 1
+    "191.26.135.146" // IP da empresa 2 20'     // <-- COLOQUE O IP DA EMPRESA AQUI
 ];
 
 export async function POST(request) {

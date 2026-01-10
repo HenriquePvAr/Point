@@ -4,10 +4,8 @@ import prisma from '../../lib/prisma';
 
 // === LISTA DE IPS PERMITIDOS (TRAVA ATIVA) ===
 const IPS_PERMITIDOS = [
-    "::1", 
-    "127.0.0.1", 
-    "45.236.9.18",    // IP Antigo
-    "152.237.129.4"   // Seu IP atual (Adicionado)
+    "193.186.4.241", // IP da empresa 1
+    "191.26.135.146" // IP da empresa 2u IP atual (Adicionado)
 ];
 
 export async function POST(request) {
