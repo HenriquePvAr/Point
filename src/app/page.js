@@ -45,7 +45,7 @@ export default function Page() {
   
   // Filtros da Ficha de Frequência
   const [mesSelecionado, setMesSelecionado] = useState(new Date().getMonth());
-  const [anoSelecionado, setAnoSelecionado] = useState(2026);
+  const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
   
   // Mensagens / Justificativas
   const [mensagens, setMensagens] = useState({}); 
@@ -173,13 +173,10 @@ export default function Page() {
   }
 
  // RECUPERAÇÃO DE SENHA - PASSO 2 (REDEFINIR)
-  // --- VERSÃO CORRIGIDA ---
   async function redefinirSenhaRecuperacao() {
-      // Validação básica
       if(!codigoRecuperar || !novaSenhaRecuperar) return toast.warning("Preencha o código e a nova senha.");
       
       try {
-          // AQUI ESTÁ A CORREÇÃO: Apontando para o arquivo que grava no banco
           const res = await fetch("/api/auth/nova-senha", { 
               method: "POST", 
               body: JSON.stringify({ 
@@ -193,11 +190,9 @@ export default function Page() {
           
           if(data.success) {
               toast.success("Senha redefinida com sucesso! Faça login.");
-              
-              // Limpa os campos e volta para a tela de login
               setViewRecuperar(false);
               setPassoRecuperar(1);
-              setSenha(""); // Limpa o campo de senha do login para não confundir
+              setSenha(""); 
               setCodigoRecuperar("");
               setNovaSenhaRecuperar("");
               setCpf(""); 
@@ -209,43 +204,76 @@ export default function Page() {
           toast.error("Erro ao tentar salvar a senha."); 
       }
   }
+  
   // ==========================================================
   // 5. FUNÇÕES DE DADOS (PONTO E MENSAGENS)
   // ==========================================================
   
-  // REGISTRAR PONTO
+  // ---> AQUI ESTÁ A ALTERAÇÃO PRINCIPAL (GEOLOCALIZAÇÃO) <---
   async function confirmarRegistro() {
     if (!tipoSelecionado) return;
-    setStatus({ tipo: "loading", texto: "Registrando..." });
-    try {
-      const res = await fetch("/api/ponto", {
-        method: "POST",
-        body: JSON.stringify({ usuarioId: user.id, nome: user.nome, tipo: tipoSelecionado }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.success(`${tipoSelecionado} registrado com sucesso!`);
-        carregarDadosUsuario(user.id);
-        setTipoSelecionado(null);
-      } else {
-        toast.error(data.message);
-      }
-    } catch (e) { toast.error("Erro de conexão."); }
-    setTimeout(() => setStatus(null), 1500);
+
+    // 1. Verifica se o navegador suporta GPS
+    if (!("geolocation" in navigator)) {
+        return toast.error("Seu dispositivo não suporta Geolocalização.");
+    }
+
+    setStatus({ tipo: "loading", texto: "Obtendo localização..." });
+
+    // 2. Pede permissão e pega as coordenadas
+    navigator.geolocation.getCurrentPosition(
+        async (position) => {
+            const { latitude, longitude } = position.coords;
+
+            // 3. Envia para o servidor validar
+            setStatus({ tipo: "loading", texto: "Registrando..." });
+            try {
+                const res = await fetch("/api/ponto", {
+                    method: "POST",
+                    body: JSON.stringify({ 
+                        usuarioId: user.id, 
+                        nome: user.nome, 
+                        tipo: tipoSelecionado,
+                        latitude: latitude,   // Envia Lat
+                        longitude: longitude  // Envia Long
+                    }),
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    toast.success(`${tipoSelecionado} registrado com sucesso!`);
+                    carregarDadosUsuario(user.id);
+                    setTipoSelecionado(null);
+                } else {
+                    // Exibe mensagem se estiver longe (bloqueio)
+                    toast.error(data.message); 
+                }
+            } catch (e) { 
+                toast.error("Erro de conexão."); 
+            }
+            setTimeout(() => setStatus(null), 1500);
+        },
+        (error) => {
+            // Tratamento de erros do GPS
+            console.error("Erro GPS:", error);
+            setStatus(null);
+            if (error.code === 1) toast.warning("Permita a localização no navegador para registrar o ponto.");
+            else if (error.code === 2) toast.error("Sinal de GPS indisponível.");
+            else toast.error("Tempo limite do GPS esgotado. Tente novamente.");
+        },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
   }
 
   // CARREGAR TUDO (Histórico e Justificativas)
   async function carregarDadosUsuario(id) {
     try {
-        // 1. Carrega Pontos
         const resPonto = await fetch(`/api/ponto?userId=${id}`);
         setHistorico(await resPonto.json());
 
-        // 2. Carrega Mensagens (Justificativas)
         const resMsg = await fetch(`/api/mensagens?userId=${id}`);
         const dataMsg = await resMsg.json();
         
-        // Transforma array do banco em objeto fácil de ler: { '2026-01-01': 'Texto...' }
         const msgObj = {};
         if (Array.isArray(dataMsg)) {
             dataMsg.forEach(m => {
@@ -270,7 +298,6 @@ export default function Page() {
         const data = await res.json();
 
         if (data.success) {
-            // Atualiza estado local para feedback imediato
             setMensagens(prev => ({...prev, [dataIso]: texto}));
             toast.success("Justificativa salva com sucesso!");
         } else {
@@ -279,11 +306,11 @@ export default function Page() {
     } catch (e) { toast.error("Erro de conexão."); }
   }
 
-  // Regras para habilitar botões (Entrada > Intervalo > Volta > Saída)
+  // Regras para habilitar botões
   function verificarPermissao(tipoBotao) {
-      if (ultimoRegistroHoje === 'Saída') return false; // Dia encerrado
+      if (ultimoRegistroHoje === 'Saída') return false; 
       if (tipoBotao === 'Entrada') return ultimoRegistroHoje === null;
-      if (tipoBotao === 'Ida Intervalo') return ultimoRegistroHoje === 'Entrada' || ultimoRegistroHoje === 'Volta Intervalo'; // Permite múltiplos intervalos se necessário
+      if (tipoBotao === 'Ida Intervalo') return ultimoRegistroHoje === 'Entrada' || ultimoRegistroHoje === 'Volta Intervalo';
       if (tipoBotao === 'Volta Intervalo') return ultimoRegistroHoje === 'Ida Intervalo';
       if (tipoBotao === 'Saída') return ultimoRegistroHoje === 'Entrada' || ultimoRegistroHoje === 'Volta Intervalo';
       return false;
