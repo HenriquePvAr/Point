@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+// 1. CORREÇÃO: Importa a conexão compartilhada para não travar o banco
+import prisma from '../../../lib/prisma'; 
 import nodemailer from 'nodemailer';
-
-const prisma = new PrismaClient();
 
 export async function POST(request) {
     const { email } = await request.json();
@@ -10,7 +9,7 @@ export async function POST(request) {
     try {
         console.log(`Solicitação de senha para: ${email}`);
 
-        // 1. Procura se o funcionário existe no banco
+        // 2. Procura se o funcionário existe no banco
         const user = await prisma.usuario.findFirst({
             where: { email: email }
         });
@@ -19,31 +18,31 @@ export async function POST(request) {
             return NextResponse.json({ success: false, message: "E-mail não encontrado no sistema." }, { status: 404 });
         }
 
-        // 2. Gera o código
+        // 3. Gera o código (6 dígitos)
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
 
-        // 3. Salva o código no cadastro do funcionário
+        // 4. Salva o código no cadastro do funcionário
         await prisma.usuario.update({
             where: { id: user.id },
             data: { codigoRecuperacao: codigo }
         });
 
-        // 4. CONFIGURAÇÃO DO CARTEIRO (SEU GMAIL PESSOAL)
+        // 5. CONFIGURAÇÃO DO CARTEIRO (SEU GMAIL PESSOAL)
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
                 // Quem ENVIA o e-mail (O Carteiro)
                 user: 'henriquepaiva128@gmail.com', 
                 
-                // A Senha de App gerada neste e-mail (henriquepaiva128@gmail.com)
+                // A Senha de App gerada neste e-mail
                 pass: 'vajz ehed czaw ehtd' 
             }
         });
 
-        // 5. O ENVIO
+        // 6. O ENVIO
         await transporter.sendMail({
             from: '"Sistema Ponto" <henriquepaiva128@gmail.com>', // Quem manda
-            to: email, // Quem recebe (o e-mail do funcionário: esbam, hotmail, etc)
+            to: email, // Quem recebe
             subject: 'Recuperação de Senha',
             html: `
                 <div style="font-family: sans-serif; padding: 20px; color: #333;">
@@ -61,6 +60,6 @@ export async function POST(request) {
 
     } catch (error) {
         console.error("Erro no envio:", error);
-        return NextResponse.json({ success: false, message: "Erro ao enviar e-mail." }, { status: 500 });
+        return NextResponse.json({ success: false, message: "Erro ao enviar e-mail. Tente novamente." }, { status: 500 });
     }
 }
