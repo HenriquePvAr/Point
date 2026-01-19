@@ -1,65 +1,77 @@
 import { NextResponse } from 'next/server';
-// 1. CORREÇÃO: Importa a conexão compartilhada para não travar o banco
-import prisma from '../../../lib/prisma'; 
+import prisma from '../../../lib/prisma'; // Certifique-se que o caminho está correto
 import nodemailer from 'nodemailer';
 
 export async function POST(request) {
-    const { email } = await request.json();
-
+    console.log("--- INICIANDO RECUPERAÇÃO DE SENHA ---");
+    
     try {
-        console.log(`Solicitação de senha para: ${email}`);
+        const { email } = await request.json();
+        console.log(`1. Email recebido: ${email}`);
 
-        // 2. Procura se o funcionário existe no banco
+        // --- PASSO 1: BANCO DE DADOS ---
         const user = await prisma.usuario.findFirst({
             where: { email: email }
         });
 
         if (!user) {
-            return NextResponse.json({ success: false, message: "E-mail não encontrado no sistema." }, { status: 404 });
+            console.log("❌ Erro: E-mail não encontrado no banco.");
+            return NextResponse.json({ success: false, message: "E-mail não encontrado." }, { status: 404 });
         }
+        console.log(`2. Usuário encontrado: ${user.nome} (ID: ${user.id})`);
 
-        // 3. Gera o código (6 dígitos)
+        // --- PASSO 2: GERAR E SALVAR CÓDIGO ---
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-
-        // 4. Salva o código no cadastro do funcionário
+        
         await prisma.usuario.update({
             where: { id: user.id },
             data: { codigoRecuperacao: codigo }
         });
+        console.log(`3. Código gerado e salvo no banco: ${codigo}`);
 
-        // 5. CONFIGURAÇÃO DO CARTEIRO (SEU GMAIL PESSOAL)
+        // --- PASSO 3: CONFIGURAR NODEMAILER ---
+        // AQUI FOI FEITO O AJUSTE: Agora ele pega das variáveis do sistema
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
-                // Quem ENVIA o e-mail (O Carteiro)
-                user: 'henriquepaiva128@gmail.com', 
-                
-                // A Senha de App gerada neste e-mail
-                pass: 'vajz ehed czaw ehtd' 
-            }
+                user: process.env.EMAIL_USER, // Lê a variável EMAIL_USER
+                pass: process.env.EMAIL_PASS  // Lê a variável EMAIL_PASS
+            },
+            // Mantive os logs para você conseguir debugar no painel da Vercel
+            logger: true,
+            debug: true 
         });
 
-        // 6. O ENVIO
-        await transporter.sendMail({
-            from: '"Sistema Ponto" <henriquepaiva128@gmail.com>', // Quem manda
-            to: email, // Quem recebe
-            subject: 'Recuperação de Senha',
+        // --- PASSO 4: ENVIAR E-MAIL ---
+        console.log("4. Tentando enviar e-mail...");
+        const info = await transporter.sendMail({
+            from: `"Sistema Ponto" <${process.env.EMAIL_USER}>`, // Boa prática: usar a variável aqui também
+            to: email,
+            subject: 'Recuperação de Senha - Código',
+            text: `Seu código de recuperação é: ${codigo}`,
             html: `
-                <div style="font-family: sans-serif; padding: 20px; color: #333;">
-                    <h2 style="color: #071d41;">Olá, ${user.nome}!</h2>
-                    <p>Você pediu para recuperar sua senha? Aqui está seu código:</p>
-                    <div style="background: #eef2ff; padding: 20px; font-size: 28px; font-weight: bold; text-align: center; border-radius: 10px; color: #1351b4; letter-spacing: 5px; margin: 20px 0;">
+                <div style="font-family: sans-serif; color: #333;">
+                    <h2>Olá, ${user.nome}</h2>
+                    <p>Seu código para redefinir a senha é:</p>
+                    <div style="background: #eef2ff; padding: 15px; font-size: 24px; font-weight: bold; color: #1351b4; border-radius: 8px; text-align: center; margin: 20px 0;">
                         ${codigo}
                     </div>
-                    <p style="font-size: 12px; color: #666;">Copie este código e cole no sistema.</p>
                 </div>
             `
         });
 
-        return NextResponse.json({ success: true, message: "Código enviado com sucesso!" });
+        console.log("✅ E-MAIL ENVIADO COM SUCESSO!");
+        console.log("Message ID:", info.messageId);
+
+        return NextResponse.json({ success: true, message: "Código enviado!" });
 
     } catch (error) {
-        console.error("Erro no envio:", error);
-        return NextResponse.json({ success: false, message: "Erro ao enviar e-mail. Tente novamente." }, { status: 500 });
+        console.error("❌ ERRO CRÍTICO NO PROCESSO:", error);
+        
+        return NextResponse.json({ 
+            success: false, 
+            message: "Erro interno ao enviar e-mail.",
+            errorDetails: error.message 
+        }, { status: 500 });
     }
 }
