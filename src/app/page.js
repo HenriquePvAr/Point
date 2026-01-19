@@ -16,16 +16,16 @@ export default function Page() {
   // ==========================================================
   const [user, setUser] = useState(null);
   
-  // Login
-  const [cpf, setCpf] = useState("");
+  // Login (ALTERADO PARA EMAIL)
+  const [email, setEmail] = useState(""); // Antes era cpf
   const [senha, setSenha] = useState("");
-  const [mostrarSenha, setMostrarSenha] = useState(false); // Olho do Login
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   
   // Primeiro Acesso (Troca de Senha Obrigatória)
   const [modalNovaSenha, setModalNovaSenha] = useState(false);
   const [novaSenhaInput, setNovaSenhaInput] = useState("");
   const [confirmarSenhaInput, setConfirmarSenhaInput] = useState("");
-  const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false); // Olho do Primeiro Acesso
+  const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
 
   // Recuperação de Senha ("Esqueci minha senha")
   const [viewRecuperar, setViewRecuperar] = useState(false);
@@ -33,7 +33,7 @@ export default function Page() {
   const [emailRecuperar, setEmailRecuperar] = useState("");
   const [codigoRecuperar, setCodigoRecuperar] = useState("");
   const [novaSenhaRecuperar, setNovaSenhaRecuperar] = useState("");
-  const [mostrarSenhaRec, setMostrarSenhaRec] = useState(false); // Olho da Recuperação
+  const [mostrarSenhaRec, setMostrarSenhaRec] = useState(false);
 
   // ==========================================================
   // 2. ESTADOS DO SISTEMA (PONTO E INTERFACE)
@@ -109,11 +109,12 @@ export default function Page() {
   // 4. FUNÇÕES DE AUTENTICAÇÃO (API)
   // ==========================================================
   
-  // LOGIN
+  // LOGIN (ATUALIZADO PARA EMAIL)
   async function handleLogin() {
     try {
       const res = await fetch("/api/auth", {
-        method: "POST", body: JSON.stringify({ cpf, senha }),
+        method: "POST", 
+        body: JSON.stringify({ email, senha }), // Envia email em vez de cpf
       });
       const data = await res.json();
 
@@ -195,7 +196,7 @@ export default function Page() {
               setSenha(""); 
               setCodigoRecuperar("");
               setNovaSenhaRecuperar("");
-              setCpf(""); 
+              setEmail(""); // Limpa o campo de login
           } else { 
               toast.error(data.message); 
           }
@@ -209,7 +210,6 @@ export default function Page() {
   // 5. FUNÇÕES DE DADOS (PONTO E MENSAGENS)
   // ==========================================================
   
-  // ---> AQUI ESTÁ A ALTERAÇÃO PRINCIPAL (GEOLOCALIZAÇÃO) <---
   async function confirmarRegistro() {
     if (!tipoSelecionado) return;
 
@@ -376,11 +376,13 @@ export default function Page() {
                             <span className="font-black text-3xl">Point</span> Acesso
                         </h1>
                         
+                        {/* INPUT ALTERADO PARA EMAIL */}
                         <input 
                             className={`w-full p-3 mb-4 border rounded focus:outline-none focus:ring-2 focus:ring-[#1351b4] ${cores.input}`} 
-                            placeholder="CPF (apenas números)" 
-                            value={cpf} 
-                            onChange={e => setCpf(e.target.value)} 
+                            type="email"
+                            placeholder="Seu E-mail" 
+                            value={email} 
+                            onChange={e => setEmail(e.target.value)} 
                         />
                         
                         <div className="relative mb-6">

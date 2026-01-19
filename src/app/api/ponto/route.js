@@ -4,18 +4,16 @@ import prisma from '../../lib/prisma';
 // === CONFIGURAÇÃO DOS LOCAIS PERMITIDOS (GEOLOCALIZAÇÃO) ===
 const LOCAIS_PERMITIDOS = [
     { 
-        nome: "Sede - Av. do Turismo", 
-        // Coordenadas aproximadas do nº 1350 (Tarumã)
-        lat: -3.041634, 
-        lon: -60.069400, 
-        raio: 300 // Raio de tolerância em metros
+        nome: "Pinguim", 
+        lat: -3.0247373191862885, 
+        lon: -60.00115033251761, 
+        raio: 100 // Raio de tolerância em metros
     },
     { 
-        nome: "Filial - Col. Santo Antônio", 
-        // Coordenadas aproximadas do nº 128 (Av. Francisco Queiroz)
-        lat: -3.033600, 
-        lon: -59.992800, 
-        raio: 300 
+        nome: "Censipam", 
+        lat: -3.022780933499939, 
+        lon: -60.05511752323518, 
+        raio: 100 // Raio de tolerância em metros
     }
 ];
 
@@ -78,22 +76,37 @@ export async function POST(request) {
         }, { status: 403 });
     }
 
-    // Pega IP apenas para registro histórico (não bloqueia mais por IP)
+    // Pega IP apenas para registro histórico
     let ip = request.headers.get("x-forwarded-for") || "::1";
     if (ip.includes(',')) ip = ip.split(',')[0].trim();
     if (ip.startsWith("::ffff:")) ip = ip.replace("::ffff:", "");
 
     try {
-        // Salva no Banco de Dados
-        const novoPonto = await prisma.ponto.create({
-            data: {
-                tipo: tipo,
-                ip: ip, 
-                usuarioId: parseInt(usuarioId) // Mantém a conversão que você já usava
-            }
-        });
+        // === TRANSAÇÃO: Salva Ponto + Cria Notificação ===
+        // Usamos transaction para garantir que se um falhar, nada é salvo.
+        const [novoPonto, novaNotificacao] = await prisma.$transaction([
+            // 1. Cria o registro oficial de ponto
+            prisma.ponto.create({
+                data: {
+                    tipo: tipo,
+                    ip: ip, 
+                    usuarioId: parseInt(usuarioId)
+                }
+            }),
+            // 2. Cria o aviso para o painel Admin
+            prisma.notificacao.create({
+                data: {
+                    tipo: tipo,
+                    usuarioId: parseInt(usuarioId)
+                }
+            })
+        ]);
 
-        return NextResponse.json({ success: true, message: "Ponto registrado com sucesso!", registro: novoPonto });
+        return NextResponse.json({ 
+            success: true, 
+            message: "Ponto registrado com sucesso!", 
+            registro: novoPonto 
+        });
 
     } catch (error) {
         console.error("Erro ao registrar ponto:", error);
