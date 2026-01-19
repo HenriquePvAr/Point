@@ -42,7 +42,7 @@ export default function AdminPage() {
   
   // Notificações e Atividades Recentes
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
-  const [notificacoes, setNotificacoes] = useState([]); // Ajustado para receber da nova API
+  const [notificacoes, setNotificacoes] = useState([]); // Busca da tabela correta
 
   // Busca e Seleção de Usuário
   const [termoBusca, setTermoBusca] = useState("");
@@ -52,7 +52,7 @@ export default function AdminPage() {
   const [modalNovoUsuario, setModalNovoUsuario] = useState(false);
   const [modalEditarUsuario, setModalEditarUsuario] = useState(false);
 
-  // Formulários (CPF removido do estado inicial)
+  // Formulários
   const [novoUser, setNovoUser] = useState({ nome: "", email: "", cargo: "" });
   const [usuarioParaEditar, setUsuarioParaEditar] = useState({});
 
@@ -97,7 +97,8 @@ export default function AdminPage() {
         const resMsgs = await fetch('/api/mensagens');
         const dataMsg = await resMsgs.json();
 
-        // 4. Buscar Notificações da tabela correta (Correção solicitada)
+        // 4. Buscar Notificações da tabela NOVA (Correção)
+        // Lembre-se: Só vai aparecer aqui quem bater ponto DEPOIS da atualização.
         const resNotif = await fetch('/api/notificacoes');
         const dataNotif = await resNotif.json();
         
@@ -105,12 +106,14 @@ export default function AdminPage() {
         setUsuarios(dataUsers);
         setPontosGerais(todosPontos);
         setTodasMensagens(dataMsg);
-        setNotificacoes(dataNotif);
+        
+        // Garante que é um array para não quebrar o mapa
+        setNotificacoes(Array.isArray(dataNotif) ? dataNotif : []);
 
         setLoading(false);
     } catch (error) {
         console.error(error);
-        toast.error("Erro ao carregar dados do sistema. Tente recarregar a página.");
+        toast.error("Erro ao carregar dados do sistema.");
         setLoading(false);
     }
   }
@@ -183,7 +186,7 @@ export default function AdminPage() {
           return {
               id: user.id,
               nome: user.nome,
-              email: user.email, // Alterado de CPF para Email
+              email: user.email, 
               totalHoras: `${String(horasTotal).padStart(2,'0')}:${String(minsTotal).padStart(2,'0')}`,
               saldoMinutos: saldoMinutos,
               faltas: diasFaltosos
@@ -196,9 +199,8 @@ export default function AdminPage() {
   // 4. FUNÇÕES DE AÇÃO (CRIAR, EDITAR, BLOQUEAR, EXCLUIR)
   // ==========================================================
 
-  // --- Criar Novo Usuário (SEM CPF) ---
+  // --- Criar Novo Usuário ---
   async function handleNovoUsuario() {
-      // Validação agora é Nome e Email
       if(!novoUser.nome || !novoUser.email) return toast.warning("Nome e E-mail são campos obrigatórios.");
       
       try {
@@ -211,7 +213,7 @@ export default function AdminPage() {
         if (data.success) {
             setUsuarios([...usuarios, data.usuario]);
             setModalNovoUsuario(false);
-            setNovoUser({ nome: "", email: "", cargo: "" }); // Limpa o form (sem cpf)
+            setNovoUser({ nome: "", email: "", cargo: "" });
             toast.success("Colaborador criado com sucesso!");
             carregarDados(); // Atualiza tudo para garantir
         } else {
@@ -287,18 +289,15 @@ export default function AdminPage() {
   async function handleExcluirUsuario(user) {
     if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?\n\nIsso apagará todo o histórico de pontos e mensagens deste colaborador.\nEssa ação não pode ser desfeita.`)) {
         try {
-            // Nota: Certifique-se que sua API /api/usuarios aceita DELETE e id na query ou body
+            // Nota: Se sua API ainda não tiver o DELETE implementado, isso vai dar erro.
+            // Mas a função está aqui pronta para uso.
             const res = await fetch(`/api/usuarios?id=${user.id}`, { method: 'DELETE' });
-            
-            // Se sua API não tiver DELETE implementado, vai dar erro 405 ou 500.
-            // Mas vamos assumir que você vai implementar ou já tem.
             
             if (res.ok) {
                 toast.success("Usuário excluído com sucesso.");
                 setUsuarios(usuarios.filter(u => u.id !== user.id)); // Remove da lista local
                 carregarDados(); // Recarrega para garantir
             } else {
-                // Caso a API retorne erro JSON
                 const data = await res.json().catch(() => ({})); 
                 toast.error(data.message || "Erro ao excluir usuário.");
             }
@@ -331,7 +330,7 @@ export default function AdminPage() {
       return msg ? msg.texto : null;
   }
 
-  // Filtro da barra de busca (AGORA BUSCA POR EMAIL, NÃO CPF)
+  // Filtro da barra de busca
   const usuariosFiltrados = usuarios.filter(u => 
     u.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
     (u.email && u.email.toLowerCase().includes(termoBusca.toLowerCase()))
@@ -382,7 +381,7 @@ export default function AdminPage() {
             </div>
             
             <div className="flex items-center gap-4">
-                {/* ÍCONE DE NOTIFICAÇÃO (SINO) - CORRIGIDO */}
+                {/* ÍCONE DE NOTIFICAÇÃO (SINO) */}
                 <div className="relative">
                     <button 
                         onClick={() => setMostrarNotificacoes(!mostrarNotificacoes)} 
@@ -401,7 +400,7 @@ export default function AdminPage() {
                             <div className="max-h-64 overflow-y-auto">
                                 {notificacoes.map((notif, i) => (
                                     <div key={i} className="p-3 border-b border-gray-50 hover:bg-blue-50 text-sm transition">
-                                        {/* AQUI ESTAVA O ERRO: Agora usamos notif.usuario.nome */}
+                                        {/* Exibe o nome que veio da nova API */}
                                         <p className="font-bold text-[#1351b4]">
                                             {notif.usuario ? notif.usuario.nome : "Usuário Desconhecido"}
                                         </p>
