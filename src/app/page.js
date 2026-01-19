@@ -41,6 +41,10 @@ export default function Page() {
   const [view, setView] = useState("registro"); // 'registro' ou 'ficha'
   const [horaAtual, setHoraAtual] = useState(new Date());
   const [historico, setHistorico] = useState([]);
+  
+  // NOVO: Armazena os registros do "Turno Atual" (das 03:00 às 03:00)
+  const [registrosTurno, setRegistrosTurno] = useState([]);
+  
   const [status, setStatus] = useState(null); // Feedback visual de loading
   
   // Filtros da Ficha
@@ -57,29 +61,48 @@ export default function Page() {
   const [ultimoRegistroHoje, setUltimoRegistroHoje] = useState(null);
 
   // ==========================================================
-  // 3. EFEITOS (CRONÔMETRO E CÁLCULOS EM TEMPO REAL)
+  // 3. EFEITOS (TURNO INTELIGENTE + CRONÔMETRO)
   // ==========================================================
   useEffect(() => {
     const timer = setInterval(() => {
       const agora = new Date();
       setHoraAtual(agora);
       
-      const hojeStr = agora.toLocaleDateString('pt-BR');
-      // Filtra registros de hoje e ordena
-      const registrosHoje = historico.filter(h => 
-        new Date(h.data).toLocaleDateString('pt-BR') === hojeStr
-      ).sort((a, b) => new Date(a.data) - new Date(b.data)); 
+      // === LÓGICA DE TURNO INTELIGENTE (RESET ÀS 03:00 DA MANHÃ) ===
+      // Se for antes das 03:00, consideramos que ainda faz parte do turno do dia anterior.
+      
+      const inicioJanela = new Date(agora);
+      
+      // Se for 00:00, 01:00 ou 02:00, volta um dia
+      if (agora.getHours() < 3) {
+          inicioJanela.setDate(inicioJanela.getDate() - 1);
+      }
+      
+      // Define o início do turno às 03:00:00
+      inicioJanela.setHours(3, 0, 0, 0);
 
-      // Define qual foi a última batida (para bloquear botões errados)
-      if (registrosHoje.length > 0) {
-          setUltimoRegistroHoje(registrosHoje[registrosHoje.length - 1].tipo);
+      // Define o fim do turno às 03:00:00 do dia seguinte
+      const fimJanela = new Date(inicioJanela);
+      fimJanela.setDate(fimJanela.getDate() + 1);
+
+      // Filtra registros que pertencem a este "Turno de 24h"
+      const registrosDoTurno = historico.filter(h => {
+        const d = new Date(h.data);
+        return d >= inicioJanela && d < fimJanela;
+      }).sort((a, b) => new Date(a.data) - new Date(b.data)); 
+      
+      setRegistrosTurno(registrosDoTurno); 
+
+      // Define qual foi a última batida DO TURNO
+      if (registrosDoTurno.length > 0) {
+          setUltimoRegistroHoje(registrosDoTurno[registrosDoTurno.length - 1].tipo);
       } else {
-          setUltimoRegistroHoje(null);
+          setUltimoRegistroHoje(null); // Se passou das 03:00 e não tem nada, libera entrada
       }
 
-      // Cálculo de Horas Trabalhadas
-      const primeiraEntrada = registrosHoje.find(h => h.tipo === 'Entrada');
-      const ultimaSaida = registrosHoje.find(h => h.tipo === 'Saída'); 
+      // Cálculo de Horas Trabalhadas no Turno
+      const primeiraEntrada = registrosDoTurno.find(h => h.tipo === 'Entrada');
+      const ultimaSaida = registrosDoTurno.find(h => h.tipo === 'Saída'); 
 
       let msTrabalhados = 0;
       if (primeiraEntrada) {
@@ -248,7 +271,7 @@ export default function Page() {
             } catch (e) { 
                 toast.error("Erro de conexão."); 
             }
-            // Pequeno delay para liberar o botão novamente
+            // Delay para liberar botão
             setTimeout(() => setStatus(null), 1000);
         },
         (error) => {
@@ -303,7 +326,7 @@ export default function Page() {
     } catch (e) { toast.error("Erro de conexão."); }
   }
 
-  // Regras para habilitar botões
+  // Regras para habilitar botões (BASEADO NO TURNO)
   function verificarPermissao(tipoBotao) {
       if (ultimoRegistroHoje === 'Saída') return false; 
       if (tipoBotao === 'Entrada') return ultimoRegistroHoje === null;
@@ -508,11 +531,11 @@ export default function Page() {
                             <div className={`${cores.textSec} mt-2 text-sm capitalize`}>{horaAtual.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })}</div>
                         </div>
 
-                        {/* Tempo Trabalhado */}
+                        {/* Tempo Trabalhado (Turno Atual) */}
                         <div className={`${temaEscuro ? 'bg-[#333] border-gray-600' : 'bg-[#f2f2f2] border-gray-200'} w-full max-w-md p-4 rounded mb-10 flex items-center justify-center gap-4 border`}>
                             <div className={`h-10 w-6 border-2 ${temaEscuro ? 'border-gray-500' : 'border-gray-400'} rounded-sm`}></div> 
                             <div className="text-center">
-                                <p className="text-[#1351b4] text-sm font-semibold">Horas Trabalhadas (Hoje)</p>
+                                <p className="text-[#1351b4] text-sm font-semibold">Horas Trabalhadas (Turno)</p>
                                 <p className={`text-xl font-bold ${temaEscuro ? 'text-white' : 'text-gray-700'} font-mono`}>{tempoTrabalhado}</p>
                             </div>
                         </div>
@@ -527,7 +550,7 @@ export default function Page() {
                                 <BotaoSelecao titulo="Saída" icone={<LogOut className="w-6 h-6" />} ativo={tipoSelecionado === 'Saída'} habilitado={verificarPermissao('Saída')} onClick={() => verificarPermissao('Saída') && setTipoSelecionado('Saída')} temaEscuro={temaEscuro} corPadrao="bg-[#e6e6e6]" textoEscuro={!temaEscuro} />
                             </div>
                             
-                            {/* BOTÃO COM TRAVA DE STATUS */}
+                            {/* BOTÃO TRAVADO SE ESTIVER PROCESSANDO (Anti-Spam Visual) */}
                             <button 
                                 onClick={confirmarRegistro} 
                                 disabled={!tipoSelecionado || status} 
@@ -539,12 +562,11 @@ export default function Page() {
                         </div>
                     </div>
 
-                    {/* Lista de Registros de Hoje */}
+                    {/* Lista de Registros do Turno */}
                     <div className={`${cores.card} p-6 rounded shadow-sm border ${cores.border}`}>
-                        <h3 className="text-[#1351b4] font-bold border-b pb-2 mb-4 flex items-center gap-2"><Clock size={16}/> Registros de Hoje</h3>
+                        <h3 className="text-[#1351b4] font-bold border-b pb-2 mb-4 flex items-center gap-2"><Clock size={16}/> Registros do Turno (03h às 03h)</h3>
                         <ul className="space-y-2">
-                            {historico.filter(h => new Date(h.data).toLocaleDateString('pt-BR') === new Date().toLocaleDateString('pt-BR'))
-                            .map((h, i) => (
+                            {registrosTurno.map((h, i) => (
                                 <li key={i} className={`flex justify-between text-sm p-3 hover:opacity-80 border-b ${cores.border} last:border-0`}>
                                      <div className="flex items-center gap-2">
                                         <span className={`w-3 h-3 rounded-full ${h.tipo === 'Entrada' ? 'bg-yellow-500' : h.tipo === 'Saída' ? 'bg-gray-500' : 'bg-blue-400'}`}></span>
@@ -553,8 +575,8 @@ export default function Page() {
                                      <span className={`${cores.textSec} font-mono`}>{new Date(h.data).toLocaleTimeString('pt-BR')}</span>
                                 </li>
                             ))}
-                            {historico.filter(h => new Date(h.data).toLocaleDateString('pt-BR') === new Date().toLocaleDateString('pt-BR')).length === 0 && 
-                                <li className={`${cores.textSec} italic text-sm p-2`}>Nenhum registro efetuado hoje.</li>
+                            {registrosTurno.length === 0 && 
+                                <li className={`${cores.textSec} italic text-sm p-2`}>Nenhum registro neste turno.</li>
                             }
                         </ul>
                     </div>
