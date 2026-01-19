@@ -21,8 +21,9 @@ model Usuario {
   tipo              String   @default("funcionario")
   codigoRecuperacao String?
 
-  pontos    Ponto[]
-  mensagens Mensagem[]
+  pontos        Ponto[]
+  mensagens     Mensagem[]
+  notificacoes  Notificacao[] // <--- OBRIGATÓRIO para o sistema de notificações funcionar
 }
 
 model Ponto {
@@ -38,6 +39,17 @@ model Mensagem {
   id        Int      @id @default(autoincrement())
   dataIso   String   
   texto     String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  usuarioId Int
+}
+
+// Tabela necessária para o "sininho" do Admin
+model Notificacao {
+  id        Int      @id @default(autoincrement())
+  tipo      String   // Ex: "Entrada", "Saída"
+  lida      Boolean  @default(false)
+  criadoEm  DateTime @default(now())
+  
   usuario   Usuario  @relation(fields: [usuarioId], references: [id])
   usuarioId Int
 }

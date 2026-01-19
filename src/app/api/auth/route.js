@@ -1,20 +1,26 @@
 import { NextResponse } from 'next/server';
-import prisma from '../../lib/prisma'; // Importa a conexão compartilhada (recomendado)
+import prisma from '@/lib/prisma'; // Ajuste o import se sua pasta for diferente (ex: '../../lib/prisma')
 
 export async function POST(request) {
     try {
-        // Recebe os dados do formulário de login
+        // Recebe os dados do formulário (agora esperando email)
         const body = await request.json();
-        const { cpf, senha } = body;
+        const { email, senha } = body;
 
-        // 1. BUSCA USUÁRIO NO BANCO PELO CPF
+        // Validação básica se o email veio vazio
+        if (!email || !senha) {
+             return NextResponse.json({ success: false, message: "Preencha e-mail e senha." }, { status: 400 });
+        }
+
+        // 1. BUSCA USUÁRIO NO BANCO PELO EMAIL
+        // Nota: O campo 'email' precisa ser @unique no seu schema.prisma
         const user = await prisma.usuario.findUnique({
-            where: { cpf: cpf }
+            where: { email: email }
         });
 
         // 2. VERIFICA SE O USUÁRIO EXISTE E SE A SENHA ESTÁ CORRETA
         if (!user || user.senha !== senha) {
-            return NextResponse.json({ success: false, message: "CPF ou senha incorretos." }, { status: 401 });
+            return NextResponse.json({ success: false, message: "E-mail ou senha incorretos." }, { status: 401 });
         }
 
         // 3. VERIFICA SE O USUÁRIO ESTÁ ATIVO
@@ -22,7 +28,7 @@ export async function POST(request) {
             return NextResponse.json({ success: false, message: "Seu acesso foi desativado pelo administrador." }, { status: 403 });
         }
 
-        // 4. LOGIN SUCESSO: Retorna os dados do usuário para o Front-end
+        // 4. LOGIN SUCESSO: Retorna os dados necessários para o Front-end
         return NextResponse.json({
             success: true,
             user: {
