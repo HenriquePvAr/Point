@@ -16,18 +16,18 @@ export default function Page() {
   // ==========================================================
   const [user, setUser] = useState(null);
   
-  // Login (ALTERADO PARA EMAIL)
-  const [email, setEmail] = useState(""); // Antes era cpf
+  // Login
+  const [email, setEmail] = useState(""); 
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   
-  // Primeiro Acesso (Troca de Senha Obrigatória)
+  // Primeiro Acesso (Troca de Senha)
   const [modalNovaSenha, setModalNovaSenha] = useState(false);
   const [novaSenhaInput, setNovaSenhaInput] = useState("");
   const [confirmarSenhaInput, setConfirmarSenhaInput] = useState("");
   const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
 
-  // Recuperação de Senha ("Esqueci minha senha")
+  // Recuperação de Senha
   const [viewRecuperar, setViewRecuperar] = useState(false);
   const [passoRecuperar, setPassoRecuperar] = useState(1); // 1: Email, 2: Código
   const [emailRecuperar, setEmailRecuperar] = useState("");
@@ -43,7 +43,7 @@ export default function Page() {
   const [historico, setHistorico] = useState([]);
   const [status, setStatus] = useState(null); // Feedback visual de loading
   
-  // Filtros da Ficha de Frequência
+  // Filtros da Ficha
   const [mesSelecionado, setMesSelecionado] = useState(new Date().getMonth());
   const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
   
@@ -77,18 +77,18 @@ export default function Page() {
           setUltimoRegistroHoje(null);
       }
 
-      // Cálculo de Horas Trabalhadas em Tempo Real
+      // Cálculo de Horas Trabalhadas
       const primeiraEntrada = registrosHoje.find(h => h.tipo === 'Entrada');
-      const ultimaSaida = registrosHoje.find(h => h.tipo === 'Saída'); // Se já saiu, para de contar
+      const ultimaSaida = registrosHoje.find(h => h.tipo === 'Saída'); 
 
       let msTrabalhados = 0;
       if (primeiraEntrada) {
         const horaEntrada = new Date(primeiraEntrada.data);
         if (ultimaSaida) {
-            // Se já encerrou o dia, calcula fixo
+            // Se já encerrou o dia
             msTrabalhados = new Date(ultimaSaida.data) - horaEntrada;
         } else {
-            // Se ainda está trabalhando, calcula até agora
+            // Se ainda está trabalhando
             msTrabalhados = agora - horaEntrada;
         }
         
@@ -109,12 +109,12 @@ export default function Page() {
   // 4. FUNÇÕES DE AUTENTICAÇÃO (API)
   // ==========================================================
   
-  // LOGIN (ATUALIZADO PARA EMAIL)
+  // LOGIN
   async function handleLogin() {
     try {
       const res = await fetch("/api/auth", {
         method: "POST", 
-        body: JSON.stringify({ email, senha }), // Envia email em vez de cpf
+        body: JSON.stringify({ email, senha }),
       });
       const data = await res.json();
 
@@ -129,16 +129,14 @@ export default function Page() {
               return;
           }
           setUser(data.user); 
-          // Carrega Histórico e Mensagens assim que logar
           carregarDadosUsuario(data.user.id); 
       } else { 
-          // Exibe erro (senha errada ou usuário bloqueado/inativo)
           toast.error(data.message); 
       }
     } catch (e) { toast.error("Erro de conexão com o servidor."); }
   }
 
-  // TROCAR SENHA (PRIMEIRO ACESSO)
+  // TROCAR SENHA
   async function handleTrocarSenha() {
       if (novaSenhaInput.length < 3) return toast.warning("A senha deve ter pelo menos 3 caracteres.");
       if (novaSenhaInput !== confirmarSenhaInput) return toast.error("As senhas não coincidem.");
@@ -159,7 +157,7 @@ export default function Page() {
       } catch (e) { toast.error("Erro ao trocar senha."); }
   }
 
-  // RECUPERAÇÃO DE SENHA - PASSO 1 (ENVIAR CÓDIGO)
+  // RECUPERAÇÃO - PASSO 1
   async function enviarCodigoRecuperacao() {
       if(!emailRecuperar) return toast.warning("Digite seu e-mail cadastrado.");
       try {
@@ -173,7 +171,7 @@ export default function Page() {
       } catch(e) { toast.error("Erro no servidor."); }
   }
 
- // RECUPERAÇÃO DE SENHA - PASSO 2 (REDEFINIR)
+ // RECUPERAÇÃO - PASSO 2
   async function redefinirSenhaRecuperacao() {
       if(!codigoRecuperar || !novaSenhaRecuperar) return toast.warning("Preencha o código e a nova senha.");
       
@@ -196,7 +194,7 @@ export default function Page() {
               setSenha(""); 
               setCodigoRecuperar("");
               setNovaSenhaRecuperar("");
-              setEmail(""); // Limpa o campo de login
+              setEmail(""); 
           } else { 
               toast.error(data.message); 
           }
@@ -213,7 +211,7 @@ export default function Page() {
   async function confirmarRegistro() {
     if (!tipoSelecionado) return;
 
-    // 1. Verifica se o navegador suporta GPS
+    // 1. Verifica suporte GPS
     if (!("geolocation" in navigator)) {
         return toast.error("Seu dispositivo não suporta Geolocalização.");
     }
@@ -234,8 +232,8 @@ export default function Page() {
                         usuarioId: user.id, 
                         nome: user.nome, 
                         tipo: tipoSelecionado,
-                        latitude: latitude,   // Envia Lat
-                        longitude: longitude  // Envia Long
+                        latitude: latitude,   
+                        longitude: longitude  
                     }),
                 });
                 const data = await res.json();
@@ -245,16 +243,15 @@ export default function Page() {
                     carregarDadosUsuario(user.id);
                     setTipoSelecionado(null);
                 } else {
-                    // Exibe mensagem se estiver longe (bloqueio)
                     toast.error(data.message); 
                 }
             } catch (e) { 
                 toast.error("Erro de conexão."); 
             }
-            setTimeout(() => setStatus(null), 1500);
+            // Pequeno delay para liberar o botão novamente
+            setTimeout(() => setStatus(null), 1000);
         },
         (error) => {
-            // Tratamento de erros do GPS
             console.error("Erro GPS:", error);
             setStatus(null);
             if (error.code === 1) toast.warning("Permita a localização no navegador para registrar o ponto.");
@@ -265,7 +262,7 @@ export default function Page() {
     );
   }
 
-  // CARREGAR TUDO (Histórico e Justificativas)
+  // CARREGAR TUDO
   async function carregarDadosUsuario(id) {
     try {
         const resPonto = await fetch(`/api/ponto?userId=${id}`);
@@ -376,7 +373,6 @@ export default function Page() {
                             <span className="font-black text-3xl">Point</span> Acesso
                         </h1>
                         
-                        {/* INPUT ALTERADO PARA EMAIL */}
                         <input 
                             className={`w-full p-3 mb-4 border rounded focus:outline-none focus:ring-2 focus:ring-[#1351b4] ${cores.input}`} 
                             type="email"
@@ -530,8 +526,15 @@ export default function Page() {
                                 <BotaoSelecao titulo="Volta Intervalo" icone={<ArrowLeftCircle className="w-6 h-6" />} ativo={tipoSelecionado === 'Volta Intervalo'} habilitado={verificarPermissao('Volta Intervalo')} onClick={() => verificarPermissao('Volta Intervalo') && setTipoSelecionado('Volta Intervalo')} temaEscuro={temaEscuro} corPadrao="bg-blue-500" />
                                 <BotaoSelecao titulo="Saída" icone={<LogOut className="w-6 h-6" />} ativo={tipoSelecionado === 'Saída'} habilitado={verificarPermissao('Saída')} onClick={() => verificarPermissao('Saída') && setTipoSelecionado('Saída')} temaEscuro={temaEscuro} corPadrao="bg-[#e6e6e6]" textoEscuro={!temaEscuro} />
                             </div>
-                            <button onClick={confirmarRegistro} disabled={!tipoSelecionado} className={`font-bold py-3 px-12 rounded-full shadow-lg transition text-sm w-full md:w-auto ${!tipoSelecionado ? 'bg-gray-400 cursor-not-allowed opacity-50' : 'bg-[#1351b4] hover:bg-[#0c3b85] text-white'}`}>
-                                {tipoSelecionado ? `CONFIRMAR ${tipoSelecionado.toUpperCase()}` : 'SELECIONE UMA OPÇÃO'}
+                            
+                            {/* BOTÃO COM TRAVA DE STATUS */}
+                            <button 
+                                onClick={confirmarRegistro} 
+                                disabled={!tipoSelecionado || status} 
+                                className={`font-bold py-3 px-12 rounded-full shadow-lg transition text-sm w-full md:w-auto 
+                                ${(!tipoSelecionado || status) ? 'bg-gray-400 cursor-not-allowed opacity-50' : 'bg-[#1351b4] hover:bg-[#0c3b85] text-white'}`}
+                            >
+                                {status ? "PROCESSANDO..." : (tipoSelecionado ? `CONFIRMAR ${tipoSelecionado.toUpperCase()}` : 'SELECIONE UMA OPÇÃO')}
                             </button>
                         </div>
                     </div>
@@ -590,7 +593,6 @@ export default function Page() {
                                 dia={dia} 
                                 cores={cores} 
                                 temaEscuro={temaEscuro} 
-                                // Passa a mensagem correta para o dia
                                 mensagemSalva={mensagens[dia.dataIso]} 
                                 onSalvarMensagem={salvarMensagem}
                            />

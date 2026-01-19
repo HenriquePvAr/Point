@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma from '@/lib/prisma'; 
 
 // === CONFIGURAÇÃO DOS LOCAIS PERMITIDOS (GEOLOCALIZAÇÃO) ===
 const LOCAIS_PERMITIDOS = [
@@ -37,17 +37,44 @@ export async function POST(request) {
     const body = await request.json();
     const { latitude, longitude, usuarioId, tipo } = body;
 
-    // 1. VERIFICAÇÃO SE A LOCALIZAÇÃO VEIO DO FRONT-END
+    // 1. VALIDAÇÃO DE GPS
     if (!latitude || !longitude) {
         return NextResponse.json({ 
             success: false, 
-            message: "Localização não recebida. Ative o GPS do seu celular/computador." 
+            message: "Localização não recebida. Ative o GPS." 
         }, { status: 400 });
     }
 
-    console.log(`Tentativa de ponto em: ${latitude}, ${longitude}`);
+    console.log(`Tentativa de ponto (${tipo}) em: ${latitude}, ${longitude}`);
 
-    // 2. CÁLCULO DA DISTÂNCIA (Loop pelos locais permitidos)
+    // 2. TRAVA ANTI-DUPLICAÇÃO (SEGURANÇA)
+    // Busca o último ponto registrado por este usuário
+    try {
+        const ultimoPonto = await prisma.ponto.findFirst({
+            where: { usuarioId: parseInt(usuarioId) },
+            orderBy: { data: 'desc' }
+        });
+
+        if (ultimoPonto) {
+            const agora = new Date();
+            const tempoUltimoPonto = new Date(ultimoPonto.data);
+            const diferenca = agora - tempoUltimoPonto; // Diferença em milissegundos
+
+            // Se faz menos de 60 segundos (60000ms) que bateu o ponto, bloqueia
+            if (diferenca < 60000) { 
+                return NextResponse.json({ 
+                    success: false, 
+                    message: "Você acabou de registrar um ponto! Aguarde 1 minuto." 
+                }, { status: 429 }); // 429 = Too Many Requests
+            }
+        }
+    } catch (error) {
+        console.error("Erro ao verificar último ponto:", error);
+        // Não retorna erro aqui para não travar o sistema se o banco oscilar na leitura,
+        // mas é bom ficar atento aos logs.
+    }
+
+    // 3. CÁLCULO DA DISTÂNCIA (GEOFENCE)
     let localValido = false;
     let menorDistancia = Infinity;
     let localProximo = "";
@@ -68,7 +95,7 @@ export async function POST(request) {
         }
     }
 
-    // 3. TRAVA DE LOCALIZAÇÃO (Se não estiver perto de nenhum)
+    // 4. BLOQUEIO SE ESTIVER LONGE
     if (!localValido) {
         return NextResponse.json({ 
             success: false, 
@@ -76,16 +103,15 @@ export async function POST(request) {
         }, { status: 403 });
     }
 
-    // Pega IP apenas para registro histórico
+    // Pega IP para registro
     let ip = request.headers.get("x-forwarded-for") || "::1";
     if (ip.includes(',')) ip = ip.split(',')[0].trim();
     if (ip.startsWith("::ffff:")) ip = ip.replace("::ffff:", "");
 
     try {
-        // === TRANSAÇÃO: Salva Ponto + Cria Notificação ===
-        // Usamos transaction para garantir que se um falhar, nada é salvo.
+        // 5. TRANSAÇÃO: SALVA PONTO + NOTIFICAÇÃO
         const [novoPonto, novaNotificacao] = await prisma.$transaction([
-            // 1. Cria o registro oficial de ponto
+            // Cria o registro oficial
             prisma.ponto.create({
                 data: {
                     tipo: tipo,
@@ -93,7 +119,7 @@ export async function POST(request) {
                     usuarioId: parseInt(usuarioId)
                 }
             }),
-            // 2. Cria o aviso para o painel Admin
+            // Cria o aviso para o Admin
             prisma.notificacao.create({
                 data: {
                     tipo: tipo,
@@ -109,8 +135,8 @@ export async function POST(request) {
         });
 
     } catch (error) {
-        console.error("Erro ao registrar ponto:", error);
-        return NextResponse.json({ success: false, message: "Erro ao salvar no banco de dados." }, { status: 500 });
+        console.error("Erro ao salvar no banco:", error);
+        return NextResponse.json({ success: false, message: "Erro interno ao salvar." }, { status: 500 });
     }
 }
 
