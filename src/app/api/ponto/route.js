@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '../../lib/prisma'; 
+import prisma from '@/lib/prisma';
 
 // === CONFIGURAÇÃO DOS LOCAIS PERMITIDOS (GEOLOCALIZAÇÃO) ===
 const LOCAIS_PERMITIDOS = [

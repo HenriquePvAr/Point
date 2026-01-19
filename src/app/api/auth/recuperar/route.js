@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '../../../lib/prisma'; // Certifique-se que o caminho está correto
+import prisma from '@/lib/prisma';
 import nodemailer from 'nodemailer';
 
 export async function POST(request) {
