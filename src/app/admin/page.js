@@ -42,7 +42,7 @@ export default function AdminPage() {
   
   // Notificações e Atividades Recentes
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
-  const [ultimosRegistros, setUltimosRegistros] = useState([]);
+  const [notificacoes, setNotificacoes] = useState([]); // Ajustado para receber da nova API
 
   // Busca e Seleção de Usuário
   const [termoBusca, setTermoBusca] = useState("");
@@ -52,8 +52,8 @@ export default function AdminPage() {
   const [modalNovoUsuario, setModalNovoUsuario] = useState(false);
   const [modalEditarUsuario, setModalEditarUsuario] = useState(false);
 
-  // Formulários
-  const [novoUser, setNovoUser] = useState({ nome: "", cpf: "", email: "", cargo: "" });
+  // Formulários (CPF removido do estado inicial)
+  const [novoUser, setNovoUser] = useState({ nome: "", email: "", cargo: "" });
   const [usuarioParaEditar, setUsuarioParaEditar] = useState({});
 
   // Filtros de Data (Ficha Individual)
@@ -82,7 +82,6 @@ export default function AdminPage() {
         const dataUsers = await resUsers.json();
         
         // 2. Buscar pontos de todos os usuários
-        // (Em um sistema real, isso seria uma única query otimizada no banco)
         let todosPontos = [];
         for (let user of dataUsers) {
             try {
@@ -97,16 +96,16 @@ export default function AdminPage() {
         // 3. Buscar todas as mensagens/justificativas
         const resMsgs = await fetch('/api/mensagens');
         const dataMsg = await resMsgs.json();
+
+        // 4. Buscar Notificações da tabela correta (Correção solicitada)
+        const resNotif = await fetch('/api/notificacoes');
+        const dataNotif = await resNotif.json();
         
         // Atualiza todos os estados
         setUsuarios(dataUsers);
         setPontosGerais(todosPontos);
         setTodasMensagens(dataMsg);
-
-        // 4. Preparar dados para o "Sininho" (Notificações)
-        // Ordena por data (mais recente primeiro) e pega os 5 primeiros
-        const registrosOrdenados = [...todosPontos].sort((a,b) => new Date(b.data) - new Date(a.data));
-        setUltimosRegistros(registrosOrdenados.slice(0, 5));
+        setNotificacoes(dataNotif);
 
         setLoading(false);
     } catch (error) {
@@ -184,7 +183,7 @@ export default function AdminPage() {
           return {
               id: user.id,
               nome: user.nome,
-              cpf: user.cpf,
+              email: user.email, // Alterado de CPF para Email
               totalHoras: `${String(horasTotal).padStart(2,'0')}:${String(minsTotal).padStart(2,'0')}`,
               saldoMinutos: saldoMinutos,
               faltas: diasFaltosos
@@ -194,12 +193,13 @@ export default function AdminPage() {
   }
 
   // ==========================================================
-  // 4. FUNÇÕES DE AÇÃO (CRIAR, EDITAR, BLOQUEAR)
+  // 4. FUNÇÕES DE AÇÃO (CRIAR, EDITAR, BLOQUEAR, EXCLUIR)
   // ==========================================================
 
-  // --- Criar Novo Usuário ---
+  // --- Criar Novo Usuário (SEM CPF) ---
   async function handleNovoUsuario() {
-      if(!novoUser.nome || !novoUser.cpf) return toast.warning("Nome e CPF são campos obrigatórios.");
+      // Validação agora é Nome e Email
+      if(!novoUser.nome || !novoUser.email) return toast.warning("Nome e E-mail são campos obrigatórios.");
       
       try {
         const res = await fetch("/api/usuarios", {
@@ -211,7 +211,7 @@ export default function AdminPage() {
         if (data.success) {
             setUsuarios([...usuarios, data.usuario]);
             setModalNovoUsuario(false);
-            setNovoUser({ nome: "", cpf: "", email: "", cargo: "" });
+            setNovoUser({ nome: "", email: "", cargo: "" }); // Limpa o form (sem cpf)
             toast.success("Colaborador criado com sucesso!");
             carregarDados(); // Atualiza tudo para garantir
         } else {
@@ -283,6 +283,32 @@ export default function AdminPage() {
       }
   }
 
+  // --- EXCLUIR USUÁRIO (NOVA FUNÇÃO) ---
+  async function handleExcluirUsuario(user) {
+    if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?\n\nIsso apagará todo o histórico de pontos e mensagens deste colaborador.\nEssa ação não pode ser desfeita.`)) {
+        try {
+            // Nota: Certifique-se que sua API /api/usuarios aceita DELETE e id na query ou body
+            const res = await fetch(`/api/usuarios?id=${user.id}`, { method: 'DELETE' });
+            
+            // Se sua API não tiver DELETE implementado, vai dar erro 405 ou 500.
+            // Mas vamos assumir que você vai implementar ou já tem.
+            
+            if (res.ok) {
+                toast.success("Usuário excluído com sucesso.");
+                setUsuarios(usuarios.filter(u => u.id !== user.id)); // Remove da lista local
+                carregarDados(); // Recarrega para garantir
+            } else {
+                // Caso a API retorne erro JSON
+                const data = await res.json().catch(() => ({})); 
+                toast.error(data.message || "Erro ao excluir usuário.");
+            }
+        } catch (e) {
+            console.error(e);
+            toast.error("Erro de conexão com o servidor.");
+        }
+    }
+  }
+
   // Helper para verificar se está online (Baseado no último ponto de hoje)
   function getStatusUsuario(userId) {
       const hojeStr = new Date().toLocaleDateString('pt-BR');
@@ -305,10 +331,10 @@ export default function AdminPage() {
       return msg ? msg.texto : null;
   }
 
-  // Filtro da barra de busca
+  // Filtro da barra de busca (AGORA BUSCA POR EMAIL, NÃO CPF)
   const usuariosFiltrados = usuarios.filter(u => 
     u.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
-    u.cpf.includes(termoBusca)
+    (u.email && u.email.toLowerCase().includes(termoBusca.toLowerCase()))
   );
 
   return (
@@ -356,14 +382,14 @@ export default function AdminPage() {
             </div>
             
             <div className="flex items-center gap-4">
-                {/* ÍCONE DE NOTIFICAÇÃO (SINO) */}
+                {/* ÍCONE DE NOTIFICAÇÃO (SINO) - CORRIGIDO */}
                 <div className="relative">
                     <button 
                         onClick={() => setMostrarNotificacoes(!mostrarNotificacoes)} 
                         className="bg-white p-2.5 rounded-full shadow-sm border border-gray-200 cursor-pointer hover:bg-gray-50 relative transition"
                     >
                         <Bell size={20} className="text-gray-500" />
-                        {ultimosRegistros.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
+                        {notificacoes.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
                     </button>
                     
                     {mostrarNotificacoes && (
@@ -373,16 +399,19 @@ export default function AdminPage() {
                                 <span onClick={() => setMostrarNotificacoes(false)} className="cursor-pointer text-gray-400 hover:text-red-500"><X size={16}/></span>
                             </div>
                             <div className="max-h-64 overflow-y-auto">
-                                {ultimosRegistros.map((reg, i) => (
+                                {notificacoes.map((notif, i) => (
                                     <div key={i} className="p-3 border-b border-gray-50 hover:bg-blue-50 text-sm transition">
-                                        <p className="font-bold text-[#1351b4]">{reg.nome}</p>
+                                        {/* AQUI ESTAVA O ERRO: Agora usamos notif.usuario.nome */}
+                                        <p className="font-bold text-[#1351b4]">
+                                            {notif.usuario ? notif.usuario.nome : "Usuário Desconhecido"}
+                                        </p>
                                         <div className="flex justify-between text-xs text-gray-500 mt-1">
-                                            <span className="font-medium bg-gray-100 px-1 rounded">{reg.tipo}</span>
-                                            <span>{new Date(reg.data).toLocaleTimeString('pt-BR')}</span>
+                                            <span className="font-medium bg-gray-100 px-1 rounded">{notif.tipo}</span>
+                                            <span>{new Date(notif.criadoEm).toLocaleTimeString('pt-BR')}</span>
                                         </div>
                                     </div>
                                 ))}
-                                {ultimosRegistros.length === 0 && <p className="p-4 text-center text-gray-400 text-sm">Nenhuma atividade recente.</p>}
+                                {notificacoes.length === 0 && <p className="p-4 text-center text-gray-400 text-sm">Nenhuma atividade recente.</p>}
                             </div>
                         </div>
                     )}
@@ -445,7 +474,7 @@ export default function AdminPage() {
                                         <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
                                         <input 
                                             type="text" 
-                                            placeholder="Buscar nome ou CPF..." 
+                                            placeholder="Buscar nome ou email..." 
                                             className="pl-9 pr-4 py-2 border rounded-full text-sm focus:outline-blue-500 w-full md:w-64 bg-white" 
                                             value={termoBusca}
                                             onChange={(e) => setTermoBusca(e.target.value)}
@@ -486,8 +515,8 @@ export default function AdminPage() {
                                                     <td className="p-4">
                                                         <div className="font-bold text-[#071d41] text-base">{user.nome}</div>
                                                         <div className="text-xs text-gray-400 flex flex-col">
-                                                            <span>CPF: {user.cpf}</span>
-                                                            {user.email && <span>{user.email}</span>}
+                                                            {/* CPF REMOVIDO, AGORA MOSTRA APENAS EMAIL */}
+                                                            {user.email ? <span>{user.email}</span> : <span>Sem e-mail</span>}
                                                         </div>
                                                     </td>
                                                     <td className="p-4 text-gray-600 font-medium">{user.cargo}</td>
@@ -512,6 +541,14 @@ export default function AdminPage() {
                                                                 title="Editar Dados"
                                                             >
                                                                 <Edit3 size={18} />
+                                                            </button>
+                                                            {/* BOTÃO DE EXCLUIR (LIXEIRA) ADICIONADO */}
+                                                            <button 
+                                                                onClick={() => handleExcluirUsuario(user)} 
+                                                                className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200 transition"
+                                                                title="Excluir Colaborador"
+                                                            >
+                                                                <Trash2 size={18} />
                                                             </button>
                                                         </div>
                                                     </td>
@@ -564,7 +601,8 @@ export default function AdminPage() {
                                             <tr key={rel.id} className="hover:bg-gray-50 transition">
                                                 <td className="p-3 border font-bold text-[#071d41]">
                                                     {rel.nome}<br/>
-                                                    <span className="text-[10px] text-gray-400 font-normal">{rel.cpf}</span>
+                                                    {/* MOSTRANDO EMAIL AO INVÉS DE CPF */}
+                                                    <span className="text-[10px] text-gray-400 font-normal">{rel.email}</span>
                                                 </td>
                                                 <td className="p-3 border text-center font-mono text-gray-700 font-medium">{rel.totalHoras}</td>
                                                 <td className="p-3 border text-center font-bold">
@@ -631,8 +669,8 @@ export default function AdminPage() {
                                     <h2 className="text-2xl font-bold text-[#071d41]">{usuarioSelecionado.nome}</h2>
                                     <div className="text-gray-500 text-sm flex gap-2">
                                         <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">{usuarioSelecionado.cargo}</span>
-                                        <span>• CPF: {usuarioSelecionado.cpf}</span>
                                     </div>
+                                    {/* CPF REMOVIDO, APENAS EMAIL */}
                                     <p className="text-gray-400 text-xs mt-1">{usuarioSelecionado.email || "Sem e-mail cadastrado"}</p>
                                 </div>
                             </div>
@@ -662,8 +700,6 @@ export default function AdminPage() {
                                     <ItemDiaAdmin 
                                         key={idx} 
                                         dia={dia} 
-                                        // AQUI ESTÁ A LÓGICA CRUCIAL:
-                                        // Buscamos a mensagem correspondente a este dia e este usuário na lista geral
                                         mensagem={getMensagemDia(dia.dataIso)} 
                                     />
                                 ))}
@@ -681,7 +717,7 @@ export default function AdminPage() {
          =================================================
       */}
 
-      {/* MODAL NOVO USUÁRIO */}
+      {/* MODAL NOVO USUÁRIO (SEM CPF) */}
       {modalNovoUsuario && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
               <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in">
@@ -694,12 +730,9 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input placeholder="Ex: João Silva" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.nome} onChange={e => setNovoUser({...novoUser, nome: e.target.value})} />
                       </div>
+                      {/* CAMPO CPF REMOVIDO */}
                       <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">CPF (Apenas números)</label>
-                          <input placeholder="000.000.000-00" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.cpf} onChange={e => setNovoUser({...novoUser, cpf: e.target.value})} />
-                      </div>
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">E-mail (Para recuperação)</label>
+                          <label className="text-xs font-bold text-gray-500 uppercase">E-mail (Login)</label>
                           <input placeholder="email@exemplo.com" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.email} onChange={e => setNovoUser({...novoUser, email: e.target.value})} />
                       </div>
                       <div>
@@ -718,7 +751,7 @@ export default function AdminPage() {
           </div>
       )}
 
-      {/* MODAL EDITAR USUÁRIO */}
+      {/* MODAL EDITAR USUÁRIO (SEM CPF) */}
       {modalEditarUsuario && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
               <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in border-t-4 border-orange-500">
@@ -731,10 +764,7 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.nome} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, nome: e.target.value})} />
                       </div>
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">CPF (Bloqueado)</label>
-                          <input className="w-full border p-2.5 rounded bg-gray-100 text-gray-500 cursor-not-allowed" readOnly value={usuarioParaEditar.cpf} />
-                      </div>
+                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.email} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, email: e.target.value})} />
@@ -757,7 +787,7 @@ export default function AdminPage() {
 }
 
 // ==========================================================
-// COMPONENTES AUXILIARES (PARA NÃO POLUIR O CÓDIGO PRINCIPAL)
+// COMPONENTES AUXILIARES
 // ==========================================================
 
 function ItemDiaAdmin({ dia, mensagem }) {
