@@ -32,7 +32,9 @@ import {
   FileSpreadsheet // Ícone para o botão Excel
 } from "lucide-react";
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx'; // Importação da biblioteca Excel
+import * as XLSX from 'xlsx'; // Biblioteca Excel
+// Biblioteca de Gráficos
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function AdminPage() {
   // ==================================================================================
@@ -43,7 +45,7 @@ export default function AdminPage() {
   const [view, setView] = useState("dashboard"); // Opções: 'dashboard', 'relatorios'
   const [loading, setLoading] = useState(true);
 
-  // Dados do Admin Logado (Preenchido via API)
+  // Dados do Admin Logado
   const [adminUser, setAdminUser] = useState({
       id: null,
       nome: "Carregando...",
@@ -54,8 +56,9 @@ export default function AdminPage() {
   // Dados Principais (Banco de Dados Local)
   const [usuarios, setUsuarios] = useState([]);
   const [pontosGerais, setPontosGerais] = useState([]);
-  const [folgasGerais, setFolgasGerais] = useState([]); // Armazena as folgas de todos
-  const [todasMensagens, setTodasMensagens] = useState([]); // Armazena as justificativas
+  const [folgasGerais, setFolgasGerais] = useState([]); 
+  const [todasMensagens, setTodasMensagens] = useState([]); 
+  const [dadosGrafico, setDadosGrafico] = useState([]); // <--- DADOS PARA O GRÁFICO
   
   // Notificações e Atividades Recentes
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
@@ -63,23 +66,18 @@ export default function AdminPage() {
 
   // Busca e Seleção de Usuário
   const [termoBusca, setTermoBusca] = useState("");
-  const [usuarioSelecionado, setUsuarioSelecionado] = useState(null); // Se preenchido, mostra a ficha individual
-  const [relatorioDetalhado, setRelatorioDetalhado] = useState(null); // Folha de Ponto Detalhada
+  const [usuarioSelecionado, setUsuarioSelecionado] = useState(null); 
+  const [relatorioDetalhado, setRelatorioDetalhado] = useState(null); 
 
   // Modais (Pop-ups)
   const [modalNovoUsuario, setModalNovoUsuario] = useState(false);
   const [modalEditarUsuario, setModalEditarUsuario] = useState(false);
-  const [modalPerfilAdmin, setModalPerfilAdmin] = useState(false); // Modal do Admin
+  const [modalPerfilAdmin, setModalPerfilAdmin] = useState(false); 
 
   // Formulários
-  const [novoUser, setNovoUser] = useState({ 
-      nome: "", 
-      email: "", 
-      cargo: "" 
-  });
-  
+  const [novoUser, setNovoUser] = useState({ nome: "", email: "", cargo: "" });
   const [usuarioParaEditar, setUsuarioParaEditar] = useState({});
-  const [adminParaEditar, setAdminParaEditar] = useState({}); // Form do Admin
+  const [adminParaEditar, setAdminParaEditar] = useState({}); 
 
   // Filtros de Data (Ficha Individual)
   const [mesFicha, setMesFicha] = useState(new Date().getMonth());
@@ -103,7 +101,7 @@ export default function AdminPage() {
     try {
         setLoading(true);
 
-        // 1. Buscar lista de usuários, mensagens e notificações em paralelo
+        // 1. Buscar dados básicos
         const [resUsers, resMsgs, resNotif] = await Promise.all([
             fetch('/api/usuarios'),
             fetch('/api/mensagens'),
@@ -112,13 +110,11 @@ export default function AdminPage() {
         
         const dataUsers = await resUsers.json();
         
-        // --- LÓGICA PARA IDENTIFICAR O ADMIN ---
-        // Pega o primeiro usuário do tipo 'admin' para preencher o perfil no topo
+        // --- Identificar Admin ---
         const adminEncontrado = dataUsers.find(u => u.tipo === 'admin');
         if (adminEncontrado) {
             setAdminUser(adminEncontrado);
         } else {
-            // Fallback visual caso não ache nenhum admin no banco
             setAdminUser({ 
                 nome: "Admin Master", 
                 email: "admin@sistema.com", 
@@ -133,42 +129,85 @@ export default function AdminPage() {
         // 2. Buscar pontos e folgas de todos os usuários
         for (let user of dataUsers) {
             try {
-              // Buscar Pontos
+              // Pontos
               const resPonto = await fetch(`/api/ponto?userId=${user.id}`);
               const dataPonto = await resPonto.json();
               todosPontos = [...todosPontos, ...dataPonto];
 
-              // Buscar Folgas
+              // Folgas
               const resFolga = await fetch(`/api/folgas?userId=${user.id}`);
               const dataFolga = await resFolga.json(); 
               
-              // Mapeia para um formato fácil de buscar
               dataFolga.forEach(dataString => {
                   todasFolgas.push({ usuarioId: user.id, dataIso: dataString });
               });
 
             } catch(e) { 
-                console.log(`Aviso: Erro ao carregar dados do usuário ${user.id}`); 
+                console.log(`Erro user ${user.id}`); 
             }
         }
 
         const dataMsg = await resMsgs.json();
         const dataNotif = await resNotif.json();
         
-        // Atualiza todos os estados do sistema
+        // Atualiza estados
         setUsuarios(dataUsers);
         setPontosGerais(todosPontos);
         setFolgasGerais(todasFolgas);
         setTodasMensagens(dataMsg);
         setNotificacoes(Array.isArray(dataNotif) ? dataNotif : []);
 
+        // --- GERA DADOS DO GRÁFICO ---
+        processarGrafico(todosPontos);
+
         setLoading(false);
 
     } catch (error) {
         console.error(error);
-        toast.error("Erro ao carregar dados do sistema.");
+        toast.error("Erro ao carregar dados.");
         setLoading(false);
     }
+  }
+
+  // --- FUNÇÃO PARA GERAR O GRÁFICO (Últimos 7 dias) ---
+  function processarGrafico(pontos) {
+      const hoje = new Date();
+      const dados = [];
+      
+      // Loop dos últimos 7 dias
+      for (let i = 6; i >= 0; i--) {
+          const d = new Date(hoje);
+          d.setDate(hoje.getDate() - i);
+          const dataStr = d.toLocaleDateString('pt-BR');
+          const diaSemana = d.toLocaleDateString('pt-BR', { weekday: 'short' });
+
+          // Filtra pontos do dia (todos os usuários)
+          const pontosDoDia = pontos.filter(p => new Date(p.data).toLocaleDateString('pt-BR') === dataStr);
+          
+          let minutosTrabalhadosDia = 0;
+          
+          // Agrupa por usuário para somar corretamente
+          const usuariosIds = [...new Set(pontosDoDia.map(p => p.usuarioId))];
+          
+          usuariosIds.forEach(uid => {
+             const ptsUser = pontosDoDia.filter(p => p.usuarioId === uid);
+             const ent = ptsUser.find(p => p.tipo === 'Entrada');
+             const sai = ptsUser.filter(p => p.tipo === 'Saída').pop();
+             if(ent && sai) {
+                 let dtE = new Date(ent.data);
+                 let dtS = new Date(sai.data);
+                 if(dtS < dtE) dtS.setDate(dtS.getDate() + 1);
+                 minutosTrabalhadosDia += (dtS - dtE) / 60000;
+             }
+          });
+
+          dados.push({
+              name: diaSemana, // Eixo X
+              horas: Math.round(minutosTrabalhadosDia / 60), // Eixo Y
+              dataCompleta: dataStr
+          });
+      }
+      setDadosGrafico(dados);
   }
 
 
@@ -186,10 +225,10 @@ export default function AdminPage() {
       const relatorio = usuarios.map(user => {
           const ultimoDia = new Date(anoRelatorio, mesRelatorio + 1, 0).getDate();
           
-          let diasTrabalhadosEsperados = 0; // Dias que deveriam ter trabalho
-          let diasFolgaCount = 0;           // Dias marcados como folga
+          let diasTrabalhadosEsperados = 0; 
+          let diasFolgaCount = 0;           
           let minutosTrabalhados = 0;
-          let diasFaltosos = [];            // Apenas visual para contagem simples
+          let diasFaltosos = [];            
           const hoje = new Date(); 
 
           for (let i = 1; i <= ultimoDia; i++) {
@@ -202,11 +241,9 @@ export default function AdminPage() {
 
               if (ehFolga) {
                   diasFolgaCount++;
-                  // Se é folga, não incrementa a meta de horas (saldo deve ser 00:00)
                   continue; 
               }
 
-              // Se não é folga, conta como dia útil esperado
               diasTrabalhadosEsperados++;
 
               // Verifica Ponto
@@ -214,7 +251,7 @@ export default function AdminPage() {
               const entrada = pontosDia.find(p => p.tipo === 'Entrada');
               const tevePonto = pontosDia.length > 0;
               
-              // Lógica de Falta (Passado, sem ponto e não é folga)
+              // Lógica de Falta
               const dataAtualSemHora = new Date(dataAtual.toDateString());
               const hojeSemHora = new Date(hoje.toDateString());
 
@@ -222,14 +259,13 @@ export default function AdminPage() {
                   diasFaltosos.push(`${i}/${mesRelatorio + 1}`);
               }
 
-              // Calcula horas trabalhadas no dia
+              // Calcula horas trabalhadas
               if (entrada) {
                   const ultimaSaida = pontosDia.filter(p => p.tipo === 'Saída').pop();
                   if (ultimaSaida) {
                       let dtEntrada = new Date(entrada.data);
                       let dtSaida = new Date(ultimaSaida.data);
                       
-                      // Correção de Madrugada (se saída for menor que entrada)
                       if (dtSaida < dtEntrada) {
                           dtSaida.setDate(dtSaida.getDate() + 1);
                       }
@@ -239,7 +275,6 @@ export default function AdminPage() {
               }
           }
 
-          // Meta = Dias Úteis (Não Folga) * 8 horas
           const metaMinutos = diasTrabalhadosEsperados * 480; 
           const saldoMinutos = minutosTrabalhados - metaMinutos;
 
@@ -269,7 +304,6 @@ export default function AdminPage() {
   function handleExportarExcel() {
       const dadosExcel = [];
       
-      // Itera sobre todos os usuários para gerar os dados detalhados
       usuarios.forEach(user => {
           const diasDoUsuario = gerarDiasDoMesParaRelatorio(
               mesRelatorio,
@@ -293,7 +327,6 @@ export default function AdminPage() {
           });
       });
 
-      // Cria a planilha e dispara o download
       const worksheet = XLSX.utils.json_to_sheet(dadosExcel);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Relatório Ponto");
@@ -321,32 +354,30 @@ export default function AdminPage() {
                   nome: adminParaEditar.nome,
                   email: adminParaEditar.email,
                   cargo: adminParaEditar.cargo,
-                  acao: 'editar' // Flag para a API saber que é edição de perfil
+                  acao: 'editar'
               })
           });
 
           const data = await res.json();
 
           if (data.success) {
-              setAdminUser(data.usuario); // Atualiza o estado com os dados novos do banco
+              setAdminUser(data.usuario);
               setModalPerfilAdmin(false);
-              toast.success("Perfil atualizado com sucesso!");
-              carregarDados(); // Recarrega dados gerais por garantia
+              toast.success("Perfil atualizado!");
           } else {
               toast.error(data.message || "Erro ao atualizar.");
           }
       } catch (e) {
-          toast.error("Erro de conexão ao salvar perfil.");
+          toast.error("Erro de conexão.");
       }
   }
 
 
-  // -- Envio de Email do Relatório (Backend Real) --
+  // -- Envio de Email do Relatório --
   async function handleEnviarEmailRelatorio(colaborador) {
       const toastId = toast.loading(`Gerando relatório de ${colaborador.nome}...`);
       
       try {
-          // 1. Gera os dados completos do mês
           const diasRelatorio = gerarDiasDoMesParaRelatorio(
               mesRelatorio, 
               anoRelatorio, 
@@ -354,7 +385,6 @@ export default function AdminPage() {
               folgasGerais.filter(f => f.usuarioId === colaborador.id)
           );
 
-          // 2. Monta o HTML da tabela
           const linhasTabela = diasRelatorio.map(dia => `
             <tr>
                 <td style="border: 1px solid #ddd; padding: 8px;">${dia.dataFormatada}</td>
@@ -387,7 +417,6 @@ export default function AdminPage() {
             </div>
           `;
 
-          // 3. Envia para API
           const res = await fetch('/api/email/enviar-relatorio', {
               method: 'POST',
               body: JSON.stringify({
@@ -401,11 +430,10 @@ export default function AdminPage() {
           if (data.success) {
               toast.success(`Enviado para ${adminUser.email}`, { id: toastId });
           } else {
-              throw new Error("Falha no envio do e-mail.");
+              throw new Error("Falha no envio.");
           }
 
       } catch (e) {
-          console.error(e);
           toast.error("Erro ao enviar email.", { id: toastId });
       }
   }
@@ -452,7 +480,6 @@ export default function AdminPage() {
           const data = await res.json();
           
           if (data.success) {
-              // Atualiza o estado local imediatamente para refletir na tela
               setUsuarios(prevUsuarios => prevUsuarios.map(u => 
                   u.id === usuarioParaEditar.id ? data.usuario : u
               ));
@@ -499,7 +526,7 @@ export default function AdminPage() {
 
   // -- Excluir Usuário --
   async function handleExcluirUsuario(user) {
-    if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?\n\nIsso apagará todo o histórico de pontos e mensagens deste colaborador.`)) {
+    if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?`)) {
         try {
             const res = await fetch(`/api/usuarios?id=${user.id}`, { method: 'DELETE' });
             
@@ -508,7 +535,7 @@ export default function AdminPage() {
                 setUsuarios(usuarios.filter(u => u.id !== user.id)); 
                 carregarDados(); 
             } else { 
-                toast.error("Erro ao excluir usuário."); 
+                toast.error("Erro ao excluir."); 
             }
         } catch (e) { 
             toast.error("Erro de conexão."); 
@@ -516,7 +543,7 @@ export default function AdminPage() {
     }
   }
 
-  // Helper para verificar status online (Baseado no último ponto)
+  // Helper para verificar status online
   function getStatusUsuario(userId) {
       const hojeStr = new Date().toLocaleDateString('pt-BR');
       const pontosHoje = pontosGerais
@@ -525,7 +552,6 @@ export default function AdminPage() {
 
       if (pontosHoje.length === 0) return "offline";
       const ultimoPonto = pontosHoje[pontosHoje.length - 1];
-      
       return ['Entrada', 'Volta Intervalo'].includes(ultimoPonto.tipo) ? "online" : "pausa"; 
   }
 
@@ -628,8 +654,6 @@ export default function AdminPage() {
                     </div>
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md relative group">
                         {adminUser.nome ? adminUser.nome.substring(0, 2).toUpperCase() : "AD"}
-                        
-                        {/* Botão de Editar Perfil Admin */}
                         <button 
                             onClick={abrirEdicaoAdmin}
                             className="absolute -bottom-1 -right-1 bg-white text-blue-600 rounded-full p-1 border border-gray-200 shadow-sm hover:bg-blue-50 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -652,6 +676,7 @@ export default function AdminPage() {
                 {/* 1. DASHBOARD */}
                 {view === 'dashboard' && !usuarioSelecionado && (
                     <div className="space-y-6 animate-fade-in print:hidden">
+                        {/* CARDS KPI */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <CardResumo 
                                 titulo="Colaboradores Ativos" 
@@ -671,6 +696,22 @@ export default function AdminPage() {
                                 icon={<UserX className="text-red-500" />} 
                                 cor="border-l-4 border-red-500" 
                             />
+                        </div>
+
+                        {/* GRÁFICO DE PRODUTIVIDADE (Recharts) */}
+                        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                             <h3 className="font-bold text-[#071d41] mb-4 text-sm uppercase tracking-wide">Produtividade da Equipe (Últimos 7 dias)</h3>
+                             <div className="h-64 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={dadosGrafico}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12}} dy={10} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12}} />
+                                        <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                                        <Bar dataKey="horas" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} name="Horas Trabalhadas" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                             </div>
                         </div>
 
                         {/* TABELA DE USUÁRIOS */}
@@ -768,11 +809,11 @@ export default function AdminPage() {
                     </div>
                 )}
 
-                {/* 2. RELATÓRIOS (LISTA) */}
+                {/* 2. RELATÓRIOS (LISTA COM IMPRESSÃO CORRIGIDA) */}
                 {view === 'relatorios' && !usuarioSelecionado && !relatorioDetalhado && (
                     <div className="space-y-6 animate-fade-in">
                         
-                        {/* CABEÇALHO DE IMPRESSÃO (Invisível na tela, visível no papel) */}
+                        {/* CABEÇALHO APENAS NA IMPRESSÃO */}
                         <div className="hidden print:block text-center mb-6">
                             <h1 className="text-2xl font-bold">Relatório Geral de Ponto</h1>
                             <p className="text-sm">Período: {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mesRelatorio]} / {anoRelatorio}</p>
@@ -824,7 +865,7 @@ export default function AdminPage() {
                                         <tr key={rel.id} className="hover:bg-gray-50 transition print:break-inside-avoid">
                                             <td className="p-3 border font-bold text-[#071d41]">
                                                 {rel.nome}<br/>
-                                                <span className="text-[10px] text-gray-400 font-normal">{rel.email}</span>
+                                                <span className="text-[10px] text-gray-500 font-normal">{rel.email}</span>
                                             </td>
                                             <td className="p-3 border text-center font-mono text-gray-700 font-medium">{rel.totalHoras}</td>
                                             <td className="p-3 border text-center font-bold">
@@ -908,14 +949,14 @@ export default function AdminPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {gerarDiasDoMesParaRelatorio(mesRelatorio, anoRelatorio, pontosGerais.filter(p => p.usuarioId === relatorioDetalhado.id), folgasGerais.filter(f => f.usuarioId === relatorioDetalhado.id)).map((dia, idx) => (
+                                {gerarDiasDoMesParaRelatorio(mesRelatorio, anoRelatorio, pontosGerais.filter(p=>p.usuarioId === relatorioDetalhado.id), folgasGerais.filter(f=>f.usuarioId === relatorioDetalhado.id)).map((dia, idx) => (
                                     <tr key={idx} className="print:break-inside-avoid">
-                                        <td className="border border-gray-300 p-2 font-medium">{dia.diaNum} - {dia.diaSemana}</td>
-                                        <td className="border border-gray-300 p-2 text-center">{dia.entrada}</td>
-                                        <td className="border border-gray-300 p-2 text-center">{dia.saida}</td>
-                                        <td className="border border-gray-300 p-2 text-center font-mono">{dia.horasTrabalhadas}</td>
-                                        <td className={`border border-gray-300 p-2 text-center font-bold ${dia.saldo === '00:00' || dia.saldoPositivo ? 'text-green-700' : 'text-red-600'}`}>{dia.saldo}</td>
-                                        <td className="border border-gray-300 p-2 text-center text-[10px] uppercase font-bold text-gray-500">{dia.status}</td>
+                                        <td className="border border-black p-1">{dia.dataFormatada}</td>
+                                        <td className="border border-black p-1 text-center">{dia.entrada}</td>
+                                        <td className="border border-black p-1 text-center">{dia.saida}</td>
+                                        <td className="border border-black p-1 text-center font-mono">{dia.horasTrabalhadas}</td>
+                                        <td className={`border border-black p-1 text-center font-bold ${dia.saldo === '00:00' || dia.saldoPositivo ? 'text-green-700' : 'text-red-600'}`}>{dia.saldo}</td>
+                                        <td className="border border-black p-1 text-center">{dia.status}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -982,7 +1023,6 @@ export default function AdminPage() {
                                     <div className="text-gray-500 text-sm flex gap-2">
                                         <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">{usuarioSelecionado.cargo}</span>
                                     </div>
-                                    {/* CPF REMOVIDO, APENAS EMAIL */}
                                     <p className="text-gray-400 text-xs mt-1">{usuarioSelecionado.email || "Sem e-mail cadastrado"}</p>
                                 </div>
                             </div>
@@ -1015,7 +1055,6 @@ export default function AdminPage() {
                                         pontosReais={pontosGerais.filter(p => p.usuarioId === usuarioSelecionado.id && new Date(p.data).toLocaleDateString('pt-BR') === dia.dataFormatada)}
                                         mensagem={getMensagemDia(dia.dataIso)} 
                                         usuarioId={usuarioSelecionado.id} 
-                                        // Passa o status de folga para o componente visual
                                         isFolga={folgasGerais.some(f => f.usuarioId === usuarioSelecionado.id && f.dataIso === dia.dataIso)}
                                         onUpdate={carregarDados}
                                     />
@@ -1160,7 +1199,7 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
 
         if (isFolga) {
             status = "FOLGA";
-            saldo = "00:00"; // Saldo zerado na folga
+            saldo = "00:00"; 
             saldoPositivo = true;
         } else if (entrada) {
             entradaStr = new Date(entrada.data).toLocaleTimeString('pt-BR').slice(0,5);
@@ -1192,8 +1231,7 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
                 }
 
             } else {
-                saldo = "-08:00"; // Falta saída
-                saldoPositivo = false;
+                saldo = "-08:00"; saldoPositivo = false;
             }
         } else {
             // Verificar se o dia já passou
@@ -1337,7 +1375,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
             const res = await fetch('/api/ponto', {
                 method: 'POST',
                 body: JSON.stringify({
-                    modoAdmin: true, // <--- O SEGREDO: Essa flag libera sem GPS
+                    modoAdmin: true, 
                     usuarioId: usuarioId,
                     tipo: novoPonto.tipo,
                     dataManual: dataFinal.toISOString()
@@ -1526,7 +1564,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                                     </>
                                 )}
                             </div>
-                        )) : <p className="text-sm text-gray-400 italic py-2">Sem registros neste dia.</p>}
+                        )) : <p className="text-sm text-gray-400 italic py-2">Sem registros de ponto.</p>}
                     </div>
                 </div>
             )}
