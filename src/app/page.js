@@ -678,6 +678,11 @@ function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
         const h = Math.floor(absSaldo / 3600000);
         const m = Math.floor((absSaldo % 3600000) / 60000);
         saldoStr = `${saldoPositivo ? '' : '-'}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    } 
+    // CORREÇÃO: SE SÓ TEM ENTRADA, MOSTRA QUE DEVE 8 HORAS (-08:00)
+    else if (primeiraEntrada && !ultimaSaida) {
+        saldoStr = "-08:00";
+        saldoPositivo = false;
     }
 
     const badgeTexto = primeiraEntrada ? "* PRESENÇA REGISTRADA" : "* AUSENTE / FOLGA";

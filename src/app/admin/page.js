@@ -290,10 +290,12 @@ export default function AdminPage() {
       }
   }
 
-  // --- EXCLUIR USUÁRIO ---
+  // --- EXCLUIR USUÁRIO (NOVA FUNÇÃO) ---
   async function handleExcluirUsuario(user) {
     if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?\n\nIsso apagará todo o histórico de pontos e mensagens deste colaborador.\nEssa ação não pode ser desfeita.`)) {
         try {
+            // Nota: Se sua API ainda não tiver o DELETE implementado, isso vai dar erro.
+            // Mas a função está aqui pronta para uso.
             const res = await fetch(`/api/usuarios?id=${user.id}`, { method: 'DELETE' });
             
             if (res.ok) {
@@ -517,6 +519,7 @@ export default function AdminPage() {
                                                     <td className="p-4">
                                                         <div className="font-bold text-[#071d41] text-base">{user.nome}</div>
                                                         <div className="text-xs text-gray-400 flex flex-col">
+                                                            {/* CPF REMOVIDO, AGORA MOSTRA APENAS EMAIL */}
                                                             {user.email ? <span>{user.email}</span> : <span>Sem e-mail</span>}
                                                         </div>
                                                     </td>
@@ -543,6 +546,7 @@ export default function AdminPage() {
                                                             >
                                                                 <Edit3 size={18} />
                                                             </button>
+                                                            {/* BOTÃO DE EXCLUIR (LIXEIRA) ADICIONADO */}
                                                             <button 
                                                                 onClick={() => handleExcluirUsuario(user)} 
                                                                 className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200 transition"
@@ -601,6 +605,7 @@ export default function AdminPage() {
                                             <tr key={rel.id} className="hover:bg-gray-50 transition">
                                                 <td className="p-3 border font-bold text-[#071d41]">
                                                     {rel.nome}<br/>
+                                                    {/* MOSTRANDO EMAIL AO INVÉS DE CPF */}
                                                     <span className="text-[10px] text-gray-400 font-normal">{rel.email}</span>
                                                 </td>
                                                 <td className="p-3 border text-center font-mono text-gray-700 font-medium">{rel.totalHoras}</td>
@@ -669,6 +674,7 @@ export default function AdminPage() {
                                     <div className="text-gray-500 text-sm flex gap-2">
                                         <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">{usuarioSelecionado.cargo}</span>
                                     </div>
+                                    {/* CPF REMOVIDO, APENAS EMAIL */}
                                     <p className="text-gray-400 text-xs mt-1">{usuarioSelecionado.email || "Sem e-mail cadastrado"}</p>
                                 </div>
                             </div>
@@ -699,6 +705,7 @@ export default function AdminPage() {
                                         key={idx} 
                                         dia={dia} 
                                         mensagem={getMensagemDia(dia.dataIso)} 
+                                        // AQUI PASSAMOS AS NOVAS PROPS NECESSÁRIAS
                                         usuarioId={usuarioSelecionado.id}
                                         onUpdate={carregarDados}
                                     />
@@ -730,6 +737,7 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input placeholder="Ex: João Silva" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.nome} onChange={e => setNovoUser({...novoUser, nome: e.target.value})} />
                       </div>
+                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail (Login)</label>
                           <input placeholder="email@exemplo.com" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.email} onChange={e => setNovoUser({...novoUser, email: e.target.value})} />
@@ -763,6 +771,7 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.nome} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, nome: e.target.value})} />
                       </div>
+                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.email} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, email: e.target.value})} />
@@ -821,6 +830,11 @@ function ItemDiaAdmin({ dia, mensagem, usuarioId, onUpdate }) {
         const h = Math.floor(absSaldo / 3600000);
         const m = Math.floor((absSaldo % 3600000) / 60000);
         saldoStr = `${saldoPositivo ? '' : '-'}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    }
+    // LÓGICA: SE SÓ TEM ENTRADA (SEM SAÍDA), MOSTRA -08:00
+    else if (primeiraEntrada && !ultimaSaida) {
+        saldoStr = "-08:00";
+        saldoPositivo = false;
     }
 
     // --- AÇÕES DO ADMIN ---
@@ -916,7 +930,7 @@ function ItemDiaAdmin({ dia, mensagem, usuarioId, onUpdate }) {
                             </span>
                         )}
                         {primeiraEntrada && (
-                            <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${saldoPositivo ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                            <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${saldoPositivo ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
                                 Saldo: {saldoStr}
                             </span>
                         )}
@@ -924,6 +938,13 @@ function ItemDiaAdmin({ dia, mensagem, usuarioId, onUpdate }) {
                 </div>
                 
                 <div className="flex items-center gap-3">
+                    {/* BALÃO DE MENSAGEM NA LINHA DE RESUMO */}
+                    {mensagem && (
+                         <div className="bg-blue-100 text-blue-600 p-1.5 rounded-full" title="Possui Justificativa">
+                             <MessageCircle size={14} />
+                         </div>
+                    )}
+
                     {/* Botão ADD (Só aparece pro Admin) */}
                     <button 
                         onClick={() => { setAberto(true); setAdicionando(true); }}
