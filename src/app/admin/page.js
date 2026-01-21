@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import { 
   LayoutDashboard, 
@@ -23,24 +24,26 @@ import {
   AlertCircle, 
   Edit3, 
   Save, 
-  Trash2,
-  Printer,
-  ArrowLeft,
-  Mail,
-  Coffee 
+  Trash2, 
+  Printer, 
+  ArrowLeft, 
+  Mail, 
+  Coffee,
+  FileSpreadsheet // Ícone para o botão do Excel
 } from "lucide-react";
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx'; // Biblioteca Obrigatória: npm install xlsx
 
 export default function AdminPage() {
-  // ==========================================================
+  // ==================================================================================
   // 1. ESTADOS GERAIS DA APLICAÇÃO
-  // ==========================================================
+  // ==================================================================================
   
   // Controle de Navegação e Loading
   const [view, setView] = useState("dashboard"); // Opções: 'dashboard', 'relatorios'
   const [loading, setLoading] = useState(true);
 
-  // Dados do Admin Logado (Carregado do Banco)
+  // Dados do Admin Logado (Preenchido via API)
   const [adminUser, setAdminUser] = useState({
       id: null,
       nome: "Carregando...",
@@ -69,7 +72,12 @@ export default function AdminPage() {
   const [modalPerfilAdmin, setModalPerfilAdmin] = useState(false); // Modal do Admin
 
   // Formulários
-  const [novoUser, setNovoUser] = useState({ nome: "", email: "", cargo: "" });
+  const [novoUser, setNovoUser] = useState({ 
+      nome: "", 
+      email: "", 
+      cargo: "" 
+  });
+  
   const [usuarioParaEditar, setUsuarioParaEditar] = useState({});
   const [adminParaEditar, setAdminParaEditar] = useState({}); // Form do Admin
 
@@ -82,9 +90,10 @@ export default function AdminPage() {
   const [anoRelatorio, setAnoRelatorio] = useState(2026);
   const [dadosRelatorio, setDadosRelatorio] = useState([]);
 
-  // ==========================================================
+
+  // ==================================================================================
   // 2. CARREGAMENTO INICIAL DE DADOS (FETCH API)
-  // ==========================================================
+  // ==================================================================================
   
   useEffect(() => {
     carregarDados();
@@ -94,7 +103,7 @@ export default function AdminPage() {
     try {
         setLoading(true);
 
-        // 1. Buscar lista de usuários, mensagens e notificações
+        // 1. Buscar lista de usuários, mensagens e notificações em paralelo
         const [resUsers, resMsgs, resNotif] = await Promise.all([
             fetch('/api/usuarios'),
             fetch('/api/mensagens'),
@@ -109,8 +118,13 @@ export default function AdminPage() {
         if (adminEncontrado) {
             setAdminUser(adminEncontrado);
         } else {
-            // Fallback visual caso não ache
-            setAdminUser({ nome: "Admin Master", email: "admin@sistema.com", cargo: "Gestor", id: null });
+            // Fallback visual caso não ache nenhum admin no banco
+            setAdminUser({ 
+                nome: "Admin Master", 
+                email: "admin@sistema.com", 
+                cargo: "Gestor", 
+                id: null 
+            });
         }
 
         let todosPontos = [];
@@ -126,7 +140,7 @@ export default function AdminPage() {
 
               // Buscar Folgas
               const resFolga = await fetch(`/api/folgas?userId=${user.id}`);
-              const dataFolga = await resFolga.json(); // Array de strings ["2026-01-20"]
+              const dataFolga = await resFolga.json(); 
               
               // Mapeia para um formato fácil de buscar
               dataFolga.forEach(dataString => {
@@ -141,7 +155,7 @@ export default function AdminPage() {
         const dataMsg = await resMsgs.json();
         const dataNotif = await resNotif.json();
         
-        // Atualiza todos os estados
+        // Atualiza todos os estados do sistema
         setUsuarios(dataUsers);
         setPontosGerais(todosPontos);
         setFolgasGerais(todasFolgas);
@@ -149,6 +163,7 @@ export default function AdminPage() {
         setNotificacoes(Array.isArray(dataNotif) ? dataNotif : []);
 
         setLoading(false);
+
     } catch (error) {
         console.error(error);
         toast.error("Erro ao carregar dados do sistema.");
@@ -156,9 +171,10 @@ export default function AdminPage() {
     }
   }
 
-  // ==========================================================
+
+  // ==================================================================================
   // 3. LÓGICA DE RELATÓRIOS E CÁLCULOS
-  // ==========================================================
+  // ==================================================================================
   
   useEffect(() => {
     if (pontosGerais.length > 0 && usuarios.length > 0) {
@@ -173,7 +189,7 @@ export default function AdminPage() {
           let diasTrabalhadosEsperados = 0; // Dias que deveriam ter trabalho
           let diasFolgaCount = 0;           // Dias marcados como folga
           let minutosTrabalhados = 0;
-          let diasFaltosos = []; // Apenas visual para contagem simples
+          let diasFaltosos = [];            // Apenas visual para contagem simples
           const hoje = new Date(); 
 
           for (let i = 1; i <= ultimoDia; i++) {
@@ -212,8 +228,11 @@ export default function AdminPage() {
                   if (ultimaSaida) {
                       let dtEntrada = new Date(entrada.data);
                       let dtSaida = new Date(ultimaSaida.data);
-                      // Correção Madrugada
-                      if (dtSaida < dtEntrada) dtSaida.setDate(dtSaida.getDate() + 1);
+                      
+                      // Correção de Madrugada (se saída for menor que entrada)
+                      if (dtSaida < dtEntrada) {
+                          dtSaida.setDate(dtSaida.getDate() + 1);
+                      }
 
                       minutosTrabalhados += Math.floor((dtSaida - dtEntrada) / 60000); 
                   }
@@ -241,17 +260,56 @@ export default function AdminPage() {
       setDadosRelatorio(relatorio);
   }
 
-  // ==========================================================
-  // 4. AÇÕES E EMAIL
-  // ==========================================================
 
-  // -- Edição do Admin (ABRIR) --
+  // ==================================================================================
+  // 4. AÇÕES, EMAIL E EXCEL
+  // ==================================================================================
+
+  // -- FUNÇÃO PARA BAIXAR EXCEL --
+  function handleExportarExcel() {
+      const dadosExcel = [];
+      
+      // Itera sobre todos os usuários para gerar os dados detalhados
+      usuarios.forEach(user => {
+          const diasDoUsuario = gerarDiasDoMesParaRelatorio(
+              mesRelatorio,
+              anoRelatorio,
+              pontosGerais.filter(p => p.usuarioId === user.id),
+              folgasGerais.filter(f => f.usuarioId === user.id)
+          );
+
+          diasDoUsuario.forEach(dia => {
+              dadosExcel.push({
+                  "Colaborador": user.nome,
+                  "Cargo": user.cargo,
+                  "Data": dia.dataFormatada,
+                  "Dia da Semana": dia.diaSemana,
+                  "Entrada": dia.entrada,
+                  "Saída": dia.saida,
+                  "Horas Trabalhadas": dia.horasTrabalhadas,
+                  "Saldo do Dia": dia.saldo,
+                  "Status": dia.status
+              });
+          });
+      });
+
+      // Cria a planilha e dispara o download
+      const worksheet = XLSX.utils.json_to_sheet(dadosExcel);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Relatório Ponto");
+      
+      XLSX.writeFile(workbook, `Relatorio_Geral_${mesRelatorio + 1}_${anoRelatorio}.xlsx`);
+      toast.success("Download do Excel iniciado!");
+  }
+
+
+  // -- Abrir Modal de Edição do Admin --
   function abrirEdicaoAdmin() {
       setAdminParaEditar({ ...adminUser });
       setModalPerfilAdmin(true);
   }
 
-  // -- Edição do Admin (SALVAR NO BANCO) --
+  // -- Salvar Edição do Admin no Banco --
   async function salvarPerfilAdmin() {
       if (!adminUser.id) return toast.error("ID do admin não encontrado.");
 
@@ -263,31 +321,32 @@ export default function AdminPage() {
                   nome: adminParaEditar.nome,
                   email: adminParaEditar.email,
                   cargo: adminParaEditar.cargo,
-                  acao: 'editar' // Importante para o backend saber que é edição de perfil
+                  acao: 'editar' // Flag para a API saber que é edição de perfil
               })
           });
 
           const data = await res.json();
 
           if (data.success) {
-              setAdminUser(adminParaEditar); // Atualiza visual
+              setAdminUser(data.usuario); // Atualiza o estado com os dados novos do banco
               setModalPerfilAdmin(false);
               toast.success("Perfil atualizado com sucesso!");
-              carregarDados(); // Recarrega para garantir
+              carregarDados(); // Recarrega dados gerais por garantia
           } else {
               toast.error(data.message || "Erro ao atualizar.");
           }
       } catch (e) {
-          toast.error("Erro de conexão.");
+          toast.error("Erro de conexão ao salvar perfil.");
       }
   }
 
-  // -- Envio de Email do Relatório (AGORA VIA API REAL) --
+
+  // -- Envio de Email do Relatório (Backend Real) --
   async function handleEnviarEmailRelatorio(colaborador) {
       const toastId = toast.loading(`Gerando relatório de ${colaborador.nome}...`);
       
       try {
-          // 1. Gera os dados completos do mês (incluindo status de folga)
+          // 1. Gera os dados completos do mês
           const diasRelatorio = gerarDiasDoMesParaRelatorio(
               mesRelatorio, 
               anoRelatorio, 
@@ -295,65 +354,54 @@ export default function AdminPage() {
               folgasGerais.filter(f => f.usuarioId === colaborador.id)
           );
 
-          // 2. Monta o HTML da tabela para o e-mail
+          // 2. Monta o HTML da tabela
           const linhasTabela = diasRelatorio.map(dia => `
             <tr>
-                <td style="border: 1px solid #ddd; padding: 8px;">${dia.dataFormatada} (${dia.diaSemana})</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">${dia.dataFormatada}</td>
                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.entrada}</td>
                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.saida}</td>
                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.horasTrabalhadas}</td>
                 <td style="border: 1px solid #ddd; padding: 8px; text-align: center; color: ${dia.saldoPositivo || dia.saldo === '00:00' ? 'green' : 'red'}; font-weight: bold;">${dia.saldo}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;"><strong>${dia.status}</strong></td>
+                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.status}</td>
             </tr>
           `).join('');
 
           const htmlBody = `
-            <div style="font-family: Arial, sans-serif; color: #333;">
-                <h2 style="color: #071d41;">Relatório de Ponto - ${colaborador.nome}</h2>
-                <p><strong>Cargo:</strong> ${colaborador.cargo || 'N/A'}</p>
-                <p><strong>Período:</strong> ${mesRelatorio + 1}/${anoRelatorio}</p>
-                <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                
+            <div style="font-family: Arial, sans-serif;">
+                <h2>Relatório: ${colaborador.nome}</h2>
+                <p><strong>Referência:</strong> ${mesRelatorio + 1}/${anoRelatorio}</p>
                 <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
                     <thead style="background-color: #f3f4f6;">
                         <tr>
-                            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Data</th>
-                            <th style="border: 1px solid #ddd; padding: 8px;">Entrada</th>
-                            <th style="border: 1px solid #ddd; padding: 8px;">Saída</th>
-                            <th style="border: 1px solid #ddd; padding: 8px;">H. Trab</th>
+                            <th style="border: 1px solid #ddd; padding: 8px;">Data</th>
+                            <th style="border: 1px solid #ddd; padding: 8px;">Ent</th>
+                            <th style="border: 1px solid #ddd; padding: 8px;">Sai</th>
+                            <th style="border: 1px solid #ddd; padding: 8px;">Total</th>
                             <th style="border: 1px solid #ddd; padding: 8px;">Saldo</th>
                             <th style="border: 1px solid #ddd; padding: 8px;">Status</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        ${linhasTabela}
-                    </tbody>
+                    <tbody>${linhasTabela}</tbody>
                 </table>
-                
-                <div style="margin-top: 20px; padding: 15px; background-color: #f9fafb; border: 1px solid #e5e7eb;">
-                    <p style="margin: 5px 0;"><strong>Saldo Total do Mês:</strong> <span style="color: ${colaborador.saldoMinutos >= 0 ? 'green' : 'red'}; font-size: 14px;">${formatarSaldo(colaborador.saldoMinutos)}</span></p>
-                    <p style="margin: 5px 0;"><strong>Dias de Folga:</strong> ${colaborador.diasFolga}</p>
-                </div>
-                
-                <p style="font-size: 11px; color: #999; margin-top: 30px;">Gerado automaticamente pelo Sistema Pinguim Manoa.</p>
+                <p><strong>Saldo Final:</strong> ${formatarSaldo(colaborador.saldoMinutos)}</p>
             </div>
           `;
 
-          // 3. Chama a API Real
+          // 3. Envia para API
           const res = await fetch('/api/email/enviar-relatorio', {
               method: 'POST',
               body: JSON.stringify({
                   destinatario: adminUser.email,
-                  assunto: `Folha de Ponto: ${colaborador.nome} - Ref: ${mesRelatorio+1}/${anoRelatorio}`,
+                  assunto: `Ponto: ${colaborador.nome} - ${mesRelatorio+1}/${anoRelatorio}`,
                   htmlBody: htmlBody
               })
           });
 
           const data = await res.json();
           if (data.success) {
-              toast.success(`Enviado com sucesso para ${adminUser.email}!`, { id: toastId });
+              toast.success(`Enviado para ${adminUser.email}`, { id: toastId });
           } else {
-              throw new Error("Falha no envio. Verifique o servidor.");
+              throw new Error("Falha no envio do e-mail.");
           }
 
       } catch (e) {
@@ -362,29 +410,39 @@ export default function AdminPage() {
       }
   }
 
-  // --- Criar Novo Usuário ---
+
+  // -- Criar Novo Usuário --
   async function handleNovoUsuario() {
       if(!novoUser.nome || !novoUser.email) return toast.warning("Preencha os campos obrigatórios.");
+      
       try {
-        const res = await fetch("/api/usuarios", { method: "POST", body: JSON.stringify(novoUser) });
+        const res = await fetch("/api/usuarios", { 
+            method: "POST", 
+            body: JSON.stringify(novoUser) 
+        });
         const data = await res.json();
+
         if (data.success) {
             setUsuarios([...usuarios, data.usuario]);
             setModalNovoUsuario(false);
             setNovoUser({ nome: "", email: "", cargo: "" });
             toast.success("Colaborador criado com sucesso!");
             carregarDados(); 
-        } else { toast.error(data.message); }
-      } catch (error) { toast.error("Erro ao conectar com o servidor."); }
+        } else { 
+            toast.error(data.message); 
+        }
+      } catch (error) { 
+          toast.error("Erro ao conectar com o servidor."); 
+      }
   }
 
-  // --- Abrir Modal de Edição ---
+  // -- Abrir Edição de Usuário --
   function abrirEdicao(user) {
       setUsuarioParaEditar({ ...user });
       setModalEditarUsuario(true);
   }
 
-  // --- Salvar Edição ---
+  // -- Salvar Edição de Usuário (Com atualização imediata) --
   async function handleSalvarEdicao() {
       try {
           const res = await fetch('/api/usuarios', { 
@@ -392,46 +450,73 @@ export default function AdminPage() {
               body: JSON.stringify({ ...usuarioParaEditar, acao: 'editar' }) 
           });
           const data = await res.json();
+          
           if (data.success) {
+              // Atualiza o estado local imediatamente para refletir na tela
+              setUsuarios(prevUsuarios => prevUsuarios.map(u => 
+                  u.id === usuarioParaEditar.id ? data.usuario : u
+              ));
+              
               toast.success("Dados do colaborador atualizados!");
               setModalEditarUsuario(false);
-              carregarDados(); 
-          } else { toast.error(data.message); }
-      } catch (e) { toast.error("Erro ao salvar alterações."); }
-  }
-
-  // --- Bloquear / Desbloquear Usuário ---
-  async function toggleStatusUsuario(user) {
-      const novoStatus = user.status === 'ativo' ? 'inativo' : 'ativo';
-      if (confirm(`Tem certeza que deseja ${novoStatus === 'ativo' ? 'ativar' : 'bloquear'} o acesso de ${user.nome}?`)) {
-          try {
-              const res = await fetch('/api/usuarios', { method: 'PUT', body: JSON.stringify({ id: user.id, status: novoStatus }) });
-              const data = await res.json();
-              if (data.success) {
-                  const atualizados = usuarios.map(u => u.id === user.id ? {...u, status: novoStatus} : u);
-                  setUsuarios(atualizados);
-                  if (usuarioSelecionado?.id === user.id) setUsuarioSelecionado({...user, status: novoStatus});
-                  toast.success(`Status alterado para ${novoStatus}!`);
-              } else { toast.error("Erro ao salvar status."); }
-          } catch (e) { toast.error("Erro de conexão."); }
+          } else { 
+              toast.error(data.message); 
+          }
+      } catch (e) { 
+          toast.error("Erro ao salvar alterações."); 
       }
   }
 
-  // --- EXCLUIR USUÁRIO ---
+  // -- Bloquear / Desbloquear Usuário --
+  async function toggleStatusUsuario(user) {
+      const novoStatus = user.status === 'ativo' ? 'inativo' : 'ativo';
+      
+      if (confirm(`Tem certeza que deseja ${novoStatus === 'ativo' ? 'ativar' : 'bloquear'} o acesso de ${user.nome}?`)) {
+          try {
+              const res = await fetch('/api/usuarios', { 
+                  method: 'PUT', 
+                  body: JSON.stringify({ id: user.id, status: novoStatus }) 
+              });
+              const data = await res.json();
+
+              if (data.success) {
+                  const atualizados = usuarios.map(u => u.id === user.id ? {...u, status: novoStatus} : u);
+                  setUsuarios(atualizados);
+                  
+                  if (usuarioSelecionado?.id === user.id) {
+                      setUsuarioSelecionado({...user, status: novoStatus});
+                  }
+                  
+                  toast.success(`Status alterado para ${novoStatus}!`);
+              } else { 
+                  toast.error("Erro ao salvar status."); 
+              }
+          } catch (e) { 
+              toast.error("Erro de conexão."); 
+          }
+      }
+  }
+
+  // -- Excluir Usuário --
   async function handleExcluirUsuario(user) {
     if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?\n\nIsso apagará todo o histórico de pontos e mensagens deste colaborador.`)) {
         try {
             const res = await fetch(`/api/usuarios?id=${user.id}`, { method: 'DELETE' });
+            
             if (res.ok) {
                 toast.success("Usuário excluído com sucesso.");
                 setUsuarios(usuarios.filter(u => u.id !== user.id)); 
                 carregarDados(); 
-            } else { toast.error("Erro ao excluir usuário."); }
-        } catch (e) { toast.error("Erro de conexão."); }
+            } else { 
+                toast.error("Erro ao excluir usuário."); 
+            }
+        } catch (e) { 
+            toast.error("Erro de conexão."); 
+        }
     }
   }
 
-  // Helper para verificar se está online (Baseado no último ponto de hoje)
+  // Helper para verificar status online (Baseado no último ponto)
   function getStatusUsuario(userId) {
       const hojeStr = new Date().toLocaleDateString('pt-BR');
       const pontosHoje = pontosGerais
@@ -440,17 +525,18 @@ export default function AdminPage() {
 
       if (pontosHoje.length === 0) return "offline";
       const ultimoPonto = pontosHoje[pontosHoje.length - 1];
+      
       return ['Entrada', 'Volta Intervalo'].includes(ultimoPonto.tipo) ? "online" : "pausa"; 
   }
 
-  // Helper para encontrar mensagem/justificativa de um dia específico
+  // Helper para buscar justificativa
   function getMensagemDia(dataIso) {
       if (!usuarioSelecionado && !relatorioDetalhado) return null;
       const uid = usuarioSelecionado ? usuarioSelecionado.id : relatorioDetalhado.id;
-      const msg = todasMensagens.find(m => m.usuarioId == uid && m.dataIso === dataIso);
-      return msg ? msg.texto : null;
+      return todasMensagens.find(m => m.usuarioId == uid && m.dataIso === dataIso)?.texto;
   }
 
+  // Filtro de busca
   const usuariosFiltrados = usuarios.filter(u => 
     u.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
     (u.email && u.email.toLowerCase().includes(termoBusca.toLowerCase()))
@@ -520,7 +606,6 @@ export default function AdminPage() {
                             <div className="max-h-64 overflow-y-auto">
                                 {notificacoes.map((notif, i) => (
                                     <div key={i} className="p-3 border-b border-gray-50 hover:bg-blue-50 text-sm transition">
-                                        {/* Exibe o nome que veio da nova API */}
                                         <p className="font-bold text-[#1351b4]">
                                             {notif.usuario ? notif.usuario.nome : "Usuário Desconhecido"}
                                         </p>
@@ -536,7 +621,7 @@ export default function AdminPage() {
                     )}
                 </div>
 
-                {/* PERFIL DO ADMIN (AGORA EDITÁVEL) */}
+                {/* PERFIL DO ADMIN */}
                 <div className="flex items-center gap-3 pl-4 border-l">
                     <div className="text-right hidden md:block">
                         <p className="text-sm font-bold text-[#071d41]">{adminUser.nome}</p>
@@ -565,13 +650,10 @@ export default function AdminPage() {
             </div>
         ) : (
             <>
-                {/* =================================================
-                   VIEW 1: DASHBOARD (VISÃO GERAL)
-                   =================================================
-                */}
+                {/* 1. DASHBOARD */}
                 {view === 'dashboard' && !usuarioSelecionado && (
                     <div className="space-y-6 animate-fade-in print:hidden">
-                        {/* CARDS KPI (INDICADORES) */}
+                        {/* CARDS KPI */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <CardResumo 
                                 titulo="Colaboradores Ativos" 
@@ -643,7 +725,6 @@ export default function AdminPage() {
                                                     <td className="p-4">
                                                         <div className="font-bold text-[#071d41] text-base">{user.nome}</div>
                                                         <div className="text-xs text-gray-400 flex flex-col">
-                                                            {/* CPF REMOVIDO, AGORA MOSTRA APENAS EMAIL */}
                                                             {user.email ? <span>{user.email}</span> : <span>Sem e-mail</span>}
                                                         </div>
                                                     </td>
@@ -659,22 +740,21 @@ export default function AdminPage() {
                                                             <button 
                                                                 onClick={() => setUsuarioSelecionado(user)} 
                                                                 className="bg-blue-100 text-[#1351b4] p-2 rounded hover:bg-blue-200 transition"
-                                                                title="Ver Espelho de Ponto"
+                                                                title="Ver Espelho"
                                                             >
                                                                 <Eye size={18} />
                                                             </button>
                                                             <button 
                                                                 onClick={() => abrirEdicao(user)} 
                                                                 className="bg-orange-100 text-orange-600 p-2 rounded hover:bg-orange-200 transition"
-                                                                title="Editar Dados"
+                                                                title="Editar"
                                                             >
                                                                 <Edit3 size={18} />
                                                             </button>
-                                                            {/* BOTÃO DE EXCLUIR (LIXEIRA) ADICIONADO */}
                                                             <button 
                                                                 onClick={() => handleExcluirUsuario(user)} 
                                                                 className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200 transition"
-                                                                title="Excluir Colaborador"
+                                                                title="Excluir"
                                                             >
                                                                 <Trash2 size={18} />
                                                             </button>
@@ -690,10 +770,7 @@ export default function AdminPage() {
                     </div>
                 )}
 
-                {/* =================================================
-                   VIEW 2: RELATÓRIOS (GERAL)
-                   =================================================
-                */}
+                {/* 2. RELATÓRIOS (LISTA) */}
                 {view === 'relatorios' && !usuarioSelecionado && !relatorioDetalhado && (
                     <div className="space-y-6 animate-fade-in print:hidden">
                         <div className="bg-white p-6 rounded shadow-sm border border-gray-200">
@@ -708,8 +785,21 @@ export default function AdminPage() {
                                      <select value={anoRelatorio} onChange={e => setAnoRelatorio(Number(e.target.value))} className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer">
                                          {Array.from({length: 5}, (_,i) => 2026 + i).map(a => <option key={a} value={a}>{a}</option>)}
                                      </select>
-                                     <button className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition shadow-sm">
-                                         <Download size={16}/> Exportar PDF
+                                     
+                                     {/* BOTÃO EXPORTAR EXCEL */}
+                                     <button 
+                                        onClick={handleExportarExcel}
+                                        className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition shadow-sm"
+                                     >
+                                         <FileSpreadsheet size={16}/> Excel
+                                     </button>
+
+                                     {/* BOTÃO EXPORTAR PDF */}
+                                     <button 
+                                        onClick={() => window.print()}
+                                        className="bg-red-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-red-700 transition shadow-sm"
+                                     >
+                                         <Printer size={16}/> PDF
                                      </button>
                                 </div>
                             </div>
@@ -721,7 +811,7 @@ export default function AdminPage() {
                                             <th className="p-3 border">Colaborador</th>
                                             <th className="p-3 border text-center">Horas Trabalhadas</th>
                                             <th className="p-3 border text-center">Saldo de Horas</th>
-                                            <th className="p-3 border text-center">Dias com Falta</th>
+                                            <th className="p-3 border text-center">Dias de Folga</th>
                                             <th className="p-3 border text-center">Ação</th>
                                         </tr>
                                     </thead>
@@ -730,7 +820,6 @@ export default function AdminPage() {
                                             <tr key={rel.id} className="hover:bg-gray-50 transition">
                                                 <td className="p-3 border font-bold text-[#071d41]">
                                                     {rel.nome}<br/>
-                                                    {/* MOSTRANDO EMAIL AO INVÉS DE CPF */}
                                                     <span className="text-[10px] text-gray-400 font-normal">{rel.email}</span>
                                                 </td>
                                                 <td className="p-3 border text-center font-mono text-gray-700 font-medium">{rel.totalHoras}</td>
@@ -758,7 +847,6 @@ export default function AdminPage() {
                                                     )}
                                                 </td>
                                                 <td className="p-3 border text-center">
-                                                    {/* BOTÃO PARA ABRIR A FOLHA DETALHADA */}
                                                     <button onClick={() => setRelatorioDetalhado(rel)} className="bg-[#1351b4] text-white px-3 py-1 rounded text-xs hover:bg-blue-800 flex items-center gap-1 mx-auto transition shadow-sm">
                                                         <FileText size={14}/> Abrir Folha
                                                     </button>
@@ -779,10 +867,7 @@ export default function AdminPage() {
                     </div>
                 )}
 
-                {/* =================================================
-                   3. FOLHA DE PONTO DETALHADA (PARA IMPRESSÃO)
-                   =================================================
-                */}
+                {/* 3. FOLHA DE PONTO DETALHADA */}
                 {relatorioDetalhado && (
                     <div className="bg-white p-8 max-w-4xl mx-auto shadow-lg print:shadow-none print:w-full animate-fade-in">
                         {/* Header da Folha */}
@@ -826,7 +911,7 @@ export default function AdminPage() {
                                         <td className="border border-gray-300 p-2 text-center">{dia.entrada}</td>
                                         <td className="border border-gray-300 p-2 text-center">{dia.saida}</td>
                                         <td className="border border-gray-300 p-2 text-center font-mono">{dia.horasTrabalhadas}</td>
-                                        <td className={`border border-gray-300 p-2 text-center font-bold ${dia.saldoPositivo ? 'text-green-700' : 'text-red-600'}`}>{dia.saldo}</td>
+                                        <td className={`border border-gray-300 p-2 text-center font-bold ${dia.saldo === '00:00' || dia.saldoPositivo ? 'text-green-700' : 'text-red-600'}`}>{dia.saldo}</td>
                                         <td className="border border-gray-300 p-2 text-center text-[10px] uppercase font-bold text-gray-500">{dia.status}</td>
                                     </tr>
                                 ))}
@@ -847,18 +932,16 @@ export default function AdminPage() {
                             </div>
                         </div>
 
-                        {/* Botões de Controle (Somem na impressão) */}
+                        {/* Botões de Controle */}
                         <div className="mt-8 flex flex-col md:flex-row justify-center gap-4 print:hidden">
                             <button onClick={() => setRelatorioDetalhado(null)} className="px-6 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center justify-center gap-2 transition">
                                 <ArrowLeft size={18}/> Voltar
                             </button>
                             
-                            {/* BOTÃO DE ENVIAR EMAIL */}
                             <button onClick={() => handleEnviarEmailRelatorio(relatorioDetalhado)} className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg transition">
                                 <Mail size={18}/> Enviar por E-mail
                             </button>
 
-                            {/* BOTÃO DE IMPRIMIR */}
                             <button onClick={() => window.print()} className="px-6 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg transition">
                                 <Printer size={18}/> Imprimir Folha
                             </button>
@@ -894,7 +977,6 @@ export default function AdminPage() {
                                     <div className="text-gray-500 text-sm flex gap-2">
                                         <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">{usuarioSelecionado.cargo}</span>
                                     </div>
-                                    {/* CPF REMOVIDO, APENAS EMAIL */}
                                     <p className="text-gray-400 text-xs mt-1">{usuarioSelecionado.email || "Sem e-mail cadastrado"}</p>
                                 </div>
                             </div>
@@ -927,7 +1009,6 @@ export default function AdminPage() {
                                         pontosReais={pontosGerais.filter(p => p.usuarioId === usuarioSelecionado.id && new Date(p.data).toLocaleDateString('pt-BR') === dia.dataFormatada)}
                                         mensagem={getMensagemDia(dia.dataIso)} 
                                         usuarioId={usuarioSelecionado.id} 
-                                        // Passa o status de folga para o componente visual
                                         isFolga={folgasGerais.some(f => f.usuarioId === usuarioSelecionado.id && f.dataIso === dia.dataIso)}
                                         onUpdate={carregarDados}
                                     />
@@ -941,14 +1022,9 @@ export default function AdminPage() {
 
       </main>
 
-      {/* =================================================
-         MODAIS (POP-UPS)
-         =================================================
-      */}
-
-      {/* MODAL PERFIL DO ADMIN */}
+      {/* MODAL PERFIL ADMIN */}
       {modalPerfilAdmin && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm print:hidden">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
               <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in border-t-4 border-blue-500">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-lg font-bold text-[#071d41] flex items-center gap-2">
@@ -977,9 +1053,9 @@ export default function AdminPage() {
           </div>
       )}
 
-      {/* MODAL NOVO USUÁRIO (SEM CPF) */}
+      {/* MODAL NOVO USUÁRIO */}
       {modalNovoUsuario && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm print:hidden">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
               <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in">
                   <div className="flex justify-between items-center mb-6 border-b pb-2">
                       <h3 className="text-lg font-bold text-[#071d41]">Cadastrar Colaborador</h3>
@@ -990,7 +1066,6 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input placeholder="Ex: João Silva" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.nome} onChange={e => setNovoUser({...novoUser, nome: e.target.value})} />
                       </div>
-                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail (Login)</label>
                           <input placeholder="email@exemplo.com" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.email} onChange={e => setNovoUser({...novoUser, email: e.target.value})} />
@@ -1011,10 +1086,10 @@ export default function AdminPage() {
           </div>
       )}
 
-      {/* MODAL EDITAR USUÁRIO (SEM CPF) */}
+      {/* MODAL EDITAR USUÁRIO */}
       {modalEditarUsuario && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm print:hidden">
-              <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in border-t-4 border-orange-500">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
+              <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm border-t-4 border-orange-500">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-lg font-bold text-[#071d41] flex items-center gap-2"><Edit3 size={20} className="text-orange-500"/> Editar Dados</h3>
                       <button onClick={() => setModalEditarUsuario(false)} className="text-gray-400 hover:text-red-500"><X/></button>
@@ -1024,7 +1099,6 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.nome} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, nome: e.target.value})} />
                       </div>
-                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.email} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, email: e.target.value})} />
@@ -1050,7 +1124,6 @@ export default function AdminPage() {
 // FUNÇÕES AUXILIARES E COMPONENTES
 // ==========================================================
 
-// Helper Específico para a Folha de Ponto Impressa (Lógica Completa)
 function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
     const dias = [];
     const ultimoDia = new Date(ano, mes + 1, 0).getDate();
@@ -1077,7 +1150,8 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
 
         if (isFolga) {
             status = "FOLGA";
-            saldo = "00:00"; // Saldo zerado na folga
+            saldo = "00:00"; 
+            saldoPositivo = true;
         } else if (entrada) {
             entradaStr = new Date(entrada.data).toLocaleTimeString('pt-BR').slice(0,5);
             status = "PRESENÇA";
@@ -1088,26 +1162,38 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
                 let dtSaida = new Date(saida.data);
                 if (dtSaida < dtEntrada) dtSaida.setDate(dtSaida.getDate() + 1);
 
-                const diff = dtSaida - dtEntrada;
+                const diff = dtSaida - dtEntrada; // ms trabalhados
                 const hTrab = Math.floor(diff / 3600000);
                 const mTrab = Math.floor((diff % 3600000) / 60000);
                 horasTrabalhadas = `${String(hTrab).padStart(2,'0')}:${String(mTrab).padStart(2,'0')}`;
 
                 const meta = 8 * 3600000;
                 const saldoMs = diff - meta;
-                saldoPositivo = saldoMs >= 0;
-                const hSaldo = Math.floor(Math.abs(saldoMs) / 3600000);
-                const mSaldo = Math.floor((Math.abs(saldoMs) % 3600000) / 60000);
-                saldo = `${saldoPositivo ? '+' : '-'}${String(hSaldo).padStart(2,'0')}:${String(mSaldo).padStart(2,'0')}`;
+                
+                // CORREÇÃO: Tolerância para 00:00 ser verde
+                if (Math.abs(saldoMs) < 60000) {
+                    saldo = "00:00";
+                    saldoPositivo = true; 
+                } else {
+                    saldoPositivo = saldoMs >= 0;
+                    const hSaldo = Math.floor(Math.abs(saldoMs) / 3600000);
+                    const mSaldo = Math.floor((Math.abs(saldoMs) % 3600000) / 60000);
+                    saldo = `${saldoPositivo ? '+' : '-'}${String(hSaldo).padStart(2,'0')}:${String(mSaldo).padStart(2,'0')}`;
+                }
+
             } else {
-                saldo = "-08:00"; // Falta saída
-                saldoPositivo = false;
+                saldo = "-08:00"; saldoPositivo = false;
             }
         } else {
-            // Nem folga nem ponto = Falta
-            saldo = "-08:00";
-            saldoPositivo = false;
-            status = "AUSÊNCIA";
+            // Verificar se o dia já passou
+            if (data < new Date()) {
+                saldo = "-08:00"; 
+                saldoPositivo = false;
+                status = "AUSÊNCIA";
+            } else {
+                saldo = ""; 
+                status = ""; // Dia futuro
+            }
         }
 
         dias.push({
@@ -1126,11 +1212,9 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
     return dias;
 }
 
-// --- COMPONENTE DE LINHA DO DIA (AGORA COM PODERES DE EDIÇÃO) ---
 function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate }) {
     const [aberto, setAberto] = useState(false);
     
-    // Estados para Edição/Criação
     const [editandoId, setEditandoId] = useState(null);
     const [editValues, setEditValues] = useState({ hora: "", tipo: "" });
     const [adicionando, setAdicionando] = useState(false);
@@ -1141,7 +1225,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
     let saldoPositivo = true;
     let statusDia = "AUSÊNCIA";
     
-    // Se for marcado como folga
     if (isFolga) {
         statusDia = "FOLGA";
     } else {
@@ -1161,17 +1244,22 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                 const diff = dtSaida - dtEntrada;
                 const meta = 8 * 60 * 60 * 1000; 
                 const saldoMs = diff - meta;
-                saldoPositivo = saldoMs >= 0;
-                const absSaldo = Math.abs(saldoMs);
-                const h = Math.floor(absSaldo / 3600000);
-                const m = Math.floor((absSaldo % 3600000) / 60000);
-                saldoStr = `${saldoPositivo ? '' : '-'}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+                
+                // CORREÇÃO NO ITEM VISUAL
+                if (Math.abs(saldoMs) < 60000) {
+                    saldoPositivo = true;
+                    saldoStr = "00:00";
+                } else {
+                    saldoPositivo = saldoMs >= 0;
+                    const h = Math.floor(Math.abs(saldoMs) / 3600000);
+                    const m = Math.floor((Math.abs(saldoMs) % 3600000) / 60000);
+                    saldoStr = `${saldoPositivo ? '+' : '-'}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+                }
             } else {
                 saldoStr = "-08:00";
                 saldoPositivo = false;
             }
         } else {
-             // Nem folga nem entrada
              saldoStr = "-08:00";
              saldoPositivo = false;
         }
@@ -1179,19 +1267,17 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
 
     // --- AÇÕES DO ADMIN ---
 
-    // 1. Excluir Ponto
     async function handleExcluir(id) {
         if (!confirm("Tem certeza que deseja apagar este registro?")) return;
         try {
             const res = await fetch(`/api/ponto?id=${id}`, { method: 'DELETE' });
             if (res.ok) {
                 toast.success("Registro apagado.");
-                onUpdate(); // Atualiza a tela
+                onUpdate(); 
             }
         } catch (e) { toast.error("Erro ao excluir."); }
     }
 
-    // 2. Iniciar Edição (Abre os inputs na linha)
     function iniciarEdicao(ponto) {
         const dataObj = new Date(ponto.data);
         const horaFormatada = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -1199,7 +1285,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         setEditandoId(ponto.id);
     }
 
-    // 3. Salvar Edição
     async function salvarEdicao(idOriginal, dataOriginal) {
         try {
             const dataBase = new Date(dataOriginal);
@@ -1223,10 +1308,8 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         } catch (e) { toast.error("Erro ao salvar."); }
     }
 
-    // 4. Salvar Novo Ponto Manual (Essa é a mágica do Admin)
     async function salvarNovoPonto() {
         try {
-            // Pega a data do dia que estamos vendo (YYYY-MM-DD)
             const [ano, mes, diaMes] = dia.dataIso.split('-');
             const dataFinal = new Date(ano, mes - 1, diaMes);
             const [h, m] = novoPonto.hora.split(':');
@@ -1235,7 +1318,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
             const res = await fetch('/api/ponto', {
                 method: 'POST',
                 body: JSON.stringify({
-                    modoAdmin: true, // <--- O SEGREDO: Essa flag libera sem GPS
+                    modoAdmin: true, 
                     usuarioId: usuarioId,
                     tipo: novoPonto.tipo,
                     dataManual: dataFinal.toISOString()
@@ -1250,14 +1333,13 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         } catch (e) { toast.error("Erro ao criar ponto."); }
     }
 
-    // 5. Alternar Folga
     async function toggleFolga() {
         try {
             await fetch('/api/folgas', {
                 method: 'POST',
                 body: JSON.stringify({ usuarioId, dataIso: dia.dataIso })
             });
-            onUpdate(); // Atualiza para recalcular
+            onUpdate(); 
             toast.success(isFolga ? "Folga removida!" : "Folga definida!");
         } catch(e) { toast.error("Erro ao definir folga."); }
     }
@@ -1271,7 +1353,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                 <div className="flex flex-col flex-1">
                     <span className="font-bold text-sm text-[#071d41]">{dia.dataFormatada}</span>
                     
-                    {/* VISUAL STATUS DO DIA */}
                     <div className="flex gap-2 mt-1">
                         <span className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase 
                             ${statusDia === 'PRESENÇA' ? 'bg-green-100 text-green-700 border-green-200' : 
@@ -1280,7 +1361,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                             {statusDia}
                         </span>
                         
-                        {/* Mostra saldo se não for folga ou se tiver ponto mesmo na folga */}
                         {statusDia !== 'FOLGA' && (
                             <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${saldoPositivo ? 'bg-green-50 text-green-600 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
                                 Saldo: {saldoStr}
@@ -1290,7 +1370,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                 </div>
                 
                 <div className="flex items-center gap-3">
-                    {/* BALÃO DE MENSAGEM */}
                     {mensagem && (
                          <div className="bg-blue-100 text-blue-600 p-1.5 rounded-full" title="Possui Justificativa">
                              <MessageCircle size={14} />
@@ -1305,7 +1384,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
             {aberto && (
                 <div className="bg-gray-50 p-4 pl-4 md:pl-8 animate-fade-in border-t border-gray-100 shadow-inner text-sm">
                     
-                    {/* BARRA DE AÇÕES DO DIA */}
                     <div className="flex flex-wrap gap-2 mb-4">
                         <button 
                             onClick={() => setAdicionando(!adicionando)} 
@@ -1314,7 +1392,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                             <PlusCircle size={14}/> {adicionando ? 'Cancelar Adição' : 'Adicionar Ponto'}
                         </button>
                         
-                        {/* BOTÃO DE FOLGA INTELIGENTE */}
                         <button 
                             onClick={(e) => { e.stopPropagation(); toggleFolga(); }}
                             className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition 
@@ -1324,7 +1401,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                         </button>
                     </div>
 
-                    {/* FORMULÁRIO DE NOVO PONTO */}
                     {adicionando && (
                         <div className="bg-white border-l-4 border-green-500 p-3 rounded shadow-sm mb-4 flex flex-wrap items-center gap-2 animate-scale-in">
                             <span className="text-xs font-bold text-green-700 uppercase mr-2">Novo:</span>
@@ -1361,12 +1437,10 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                     )}
                     
                     <div className="space-y-2">
-                        {/* AQUI USAMOS pontosReais PARA LISTAR OS PONTOS EXATOS DO DIA */}
                         {pontosReais && pontosReais.length > 0 ? pontosReais.map((p) => (
                             <div key={p.id} className="flex items-center justify-between text-sm bg-white p-2 px-3 rounded border border-gray-200 shadow-sm hover:shadow-md transition">
                                 
                                 {editandoId === p.id ? (
-                                    // === MODO EDIÇÃO (Inputs aparecem) ===
                                     <div className="flex items-center gap-2 w-full animate-fade-in">
                                         <select 
                                             value={editValues.tipo} 
@@ -1390,7 +1464,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                                         </div>
                                     </div>
                                 ) : (
-                                    // === MODO VISUALIZAÇÃO ===
                                     <>
                                         <div className="flex items-center gap-3">
                                             <div className={`w-2 h-2 rounded-full ${p.tipo === 'Entrada' ? 'bg-green-500' : p.tipo === 'Saída' ? 'bg-red-500' : 'bg-blue-500'}`}></div>
@@ -1400,7 +1473,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                                             <span className="font-mono text-gray-700 font-bold text-base">
                                                 {new Date(p.data).toLocaleTimeString('pt-BR').slice(0,5)}
                                             </span>
-                                            {/* Badge se for manual */}
                                             {p.ip && p.ip.includes("Manual") && (
                                                 <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 rounded border border-yellow-200 font-bold hidden md:inline-block">MANUAL</span>
                                             )}
@@ -1424,7 +1496,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                                     </>
                                 )}
                             </div>
-                        )) : <p className="text-sm text-gray-400 italic py-2">Sem registros neste dia.</p>}
+                        )) : <p className="text-sm text-gray-400 italic py-2">Sem registros de ponto.</p>}
                     </div>
                 </div>
             )}
@@ -1497,17 +1569,13 @@ function gerarDiasDoMesSelecionado(mes, ano, pontos) {
         const d = new Date(ano, mes, i);
         const dataStr = d.toLocaleDateString('pt-BR');
         const dataIso = d.toISOString().split('T')[0];
-        // Note: pontos aqui é o array filtrado já para o usuário, mas precisamos filtrar por dia também
-        // A filtragem real acontece dentro do map no componente pai ou aqui.
-        // Como o ItemDiaAdmin espera 'dia.pontos' (que não estamos usando mais lá dentro, pois passamos pontosReais), 
-        // vamos manter a estrutura básica de data.
         
         dias.push({ 
             dataIso, 
             dataFormatada: dataStr, 
             diaSemana: d.toLocaleDateString('pt-BR', {weekday: 'long'}), 
-            pontos: [] // Placeholder, o ItemDiaAdmin recebe pontosReais agora para ser mais preciso
+            pontos: [] // Placeholder
         });
     }
-    return dias.reverse(); // Mostra do dia 31 pro dia 1
+    return dias.reverse(); 
 }
