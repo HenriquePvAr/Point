@@ -23,7 +23,10 @@ import {
   AlertCircle, 
   Edit3, 
   Save, 
-  Trash2
+  Trash2,
+  Printer,
+  ArrowLeft,
+  Mail
 } from "lucide-react";
 import { toast } from 'sonner';
 
@@ -35,6 +38,13 @@ export default function AdminPage() {
   // Controle de Navegação e Loading
   const [view, setView] = useState("dashboard"); // Opções: 'dashboard', 'relatorios'
   const [loading, setLoading] = useState(true);
+
+  // Dados do Admin Logado (Novo Estado para controlar o perfil do Admin)
+  const [adminUser, setAdminUser] = useState({
+      nome: "Admin Master",
+      email: "admin@pinguim.com",
+      cargo: "Gestor Geral"
+  });
 
   // Dados Principais (Banco de Dados Local)
   const [usuarios, setUsuarios] = useState([]);
@@ -48,14 +58,17 @@ export default function AdminPage() {
   // Busca e Seleção de Usuário
   const [termoBusca, setTermoBusca] = useState("");
   const [usuarioSelecionado, setUsuarioSelecionado] = useState(null); // Se preenchido, mostra a ficha individual
+  const [relatorioDetalhado, setRelatorioDetalhado] = useState(null); // Folha de Ponto (Relatórios)
 
   // Modais (Pop-ups)
   const [modalNovoUsuario, setModalNovoUsuario] = useState(false);
   const [modalEditarUsuario, setModalEditarUsuario] = useState(false);
+  const [modalPerfilAdmin, setModalPerfilAdmin] = useState(false); // <--- Novo Modal para o Admin
 
   // Formulários
   const [novoUser, setNovoUser] = useState({ nome: "", email: "", cargo: "" });
   const [usuarioParaEditar, setUsuarioParaEditar] = useState({});
+  const [adminParaEditar, setAdminParaEditar] = useState({}); // <--- Form do Admin
 
   // Filtros de Data (Ficha Individual)
   const [mesFicha, setMesFicha] = useState(new Date().getMonth());
@@ -191,7 +204,8 @@ export default function AdminPage() {
           return {
               id: user.id,
               nome: user.nome,
-              email: user.email, 
+              email: user.email,
+              cargo: user.cargo, // Adicionado para a folha
               totalHoras: `${String(horasTotal).padStart(2,'0')}:${String(minsTotal).padStart(2,'0')}`,
               saldoMinutos: saldoMinutos,
               faltas: diasFaltosos
@@ -203,6 +217,31 @@ export default function AdminPage() {
   // ==========================================================
   // 4. FUNÇÕES DE AÇÃO (CRIAR, EDITAR, BLOQUEAR, EXCLUIR)
   // ==========================================================
+
+  // -- Ações do Admin (Perfil Próprio) --
+  function abrirEdicaoAdmin() {
+      setAdminParaEditar({ ...adminUser });
+      setModalPerfilAdmin(true);
+  }
+
+  function salvarPerfilAdmin() {
+      setAdminUser(adminParaEditar);
+      setModalPerfilAdmin(false);
+      toast.success("Perfil do Administrador atualizado!");
+  }
+
+  // -- Envio de Email do Relatório --
+  function handleEnviarEmailRelatorio(colaboradorNome) {
+      // Aqui entraria a chamada real para a API de envio de email
+      toast.promise(
+          new Promise((resolve) => setTimeout(resolve, 1500)),
+          {
+              loading: `Enviando folha de ${colaboradorNome} para ${adminUser.email}...`,
+              success: `Folha enviada com sucesso para ${adminUser.email}!`,
+              error: 'Erro ao enviar email.'
+          }
+      );
+  }
 
   // --- Criar Novo Usuário ---
   async function handleNovoUsuario() {
@@ -329,9 +368,9 @@ export default function AdminPage() {
 
   // Helper para encontrar mensagem/justificativa de um dia específico
   function getMensagemDia(dataIso) {
-      if (!usuarioSelecionado) return null;
-      // Procura no array de mensagens carregado do banco
-      const msg = todasMensagens.find(m => m.usuarioId == usuarioSelecionado.id && m.dataIso === dataIso);
+      if (!usuarioSelecionado && !relatorioDetalhado) return null;
+      const uid = usuarioSelecionado ? usuarioSelecionado.id : relatorioDetalhado.id;
+      const msg = todasMensagens.find(m => m.usuarioId == uid && m.dataIso === dataIso);
       return msg ? msg.texto : null;
   }
 
@@ -345,7 +384,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-50 font-sans flex text-gray-800">
       
       {/* ======================= SIDEBAR (MENU LATERAL) ======================= */}
-      <aside className="w-64 bg-[#071d41] text-white flex flex-col fixed h-full z-10 shadow-xl">
+      <aside className="w-64 bg-[#071d41] text-white flex flex-col fixed h-full z-10 shadow-xl print:hidden">
         <div className="p-6 border-b border-blue-900">
             <h1 className="text-2xl font-black tracking-tight">Pinguim<br/><span className="text-blue-300">Admin</span></h1>
         </div>
@@ -354,13 +393,13 @@ export default function AdminPage() {
                 icon={<LayoutDashboard size={20}/>} 
                 text="Visão Geral" 
                 active={view === 'dashboard' && !usuarioSelecionado} 
-                onClick={() => { setView('dashboard'); setUsuarioSelecionado(null); }} 
+                onClick={() => { setView('dashboard'); setUsuarioSelecionado(null); setRelatorioDetalhado(null); }} 
             />
             <BotaoMenu 
                 icon={<FileText size={20}/>} 
                 text="Relatórios" 
                 active={view === 'relatorios'} 
-                onClick={() => { setView('relatorios'); setUsuarioSelecionado(null); }} 
+                onClick={() => { setView('relatorios'); setUsuarioSelecionado(null); setRelatorioDetalhado(null); }} 
             />
         </nav>
         <div className="p-4 border-t border-blue-900">
@@ -374,10 +413,10 @@ export default function AdminPage() {
       </aside>
 
       {/* ======================= CONTEÚDO PRINCIPAL ======================= */}
-      <main className="ml-64 flex-1 p-8">
+      <main className="ml-64 flex-1 p-8 print:ml-0 print:p-0 print:w-full">
         
-        {/* HEADER SUPERIOR */}
-        <header className="flex justify-between items-center mb-8 relative">
+        {/* HEADER SUPERIOR (Escondido na impressão) */}
+        <header className="flex justify-between items-center mb-8 relative print:hidden">
             <div>
                 <h2 className="text-2xl font-bold text-[#071d41]">
                     {usuarioSelecionado ? `Gestão: ${usuarioSelecionado.nome}` : view === 'relatorios' ? 'Relatórios Mensais' : 'Painel de Controle'}
@@ -421,14 +460,23 @@ export default function AdminPage() {
                     )}
                 </div>
 
-                {/* PERFIL DO ADMIN */}
+                {/* PERFIL DO ADMIN (AGORA EDITÁVEL) */}
                 <div className="flex items-center gap-3 pl-4 border-l">
                     <div className="text-right hidden md:block">
-                        <p className="text-sm font-bold text-[#071d41]">Thiago</p>
-                        <p className="text-xs text-gray-500">Dono</p>
+                        <p className="text-sm font-bold text-[#071d41]">{adminUser.nome}</p>
+                        <p className="text-xs text-gray-500">{adminUser.cargo}</p>
                     </div>
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md">
-                        TS
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md relative group">
+                        {adminUser.nome.substring(0, 2).toUpperCase()}
+                        
+                        {/* Botão de Editar Perfil Admin */}
+                        <button 
+                            onClick={abrirEdicaoAdmin}
+                            className="absolute -bottom-1 -right-1 bg-white text-blue-600 rounded-full p-1 border border-gray-200 shadow-sm hover:bg-blue-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Editar Meus Dados"
+                        >
+                            <Edit3 size={10} />
+                        </button>
                     </div>
                 </div>
             </div>
@@ -446,7 +494,7 @@ export default function AdminPage() {
                    =================================================
                 */}
                 {view === 'dashboard' && !usuarioSelecionado && (
-                    <div className="space-y-6 animate-fade-in">
+                    <div className="space-y-6 animate-fade-in print:hidden">
                         {/* CARDS KPI (INDICADORES) */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <CardResumo 
@@ -570,8 +618,8 @@ export default function AdminPage() {
                    VIEW 2: RELATÓRIOS (GERAL)
                    =================================================
                 */}
-                {view === 'relatorios' && !usuarioSelecionado && (
-                    <div className="space-y-6 animate-fade-in">
+                {view === 'relatorios' && !usuarioSelecionado && !relatorioDetalhado && (
+                    <div className="space-y-6 animate-fade-in print:hidden">
                         <div className="bg-white p-6 rounded shadow-sm border border-gray-200">
                             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
                                 <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg">
@@ -598,6 +646,7 @@ export default function AdminPage() {
                                             <th className="p-3 border text-center">Horas Trabalhadas</th>
                                             <th className="p-3 border text-center">Saldo de Horas</th>
                                             <th className="p-3 border text-center">Dias com Falta</th>
+                                            <th className="p-3 border text-center">Ação</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -626,10 +675,16 @@ export default function AdminPage() {
                                                         </div>
                                                     ) : <span className="text-green-500 font-bold text-xs flex items-center justify-center gap-1"><CheckCircle size={12}/> 100% Presente</span>}
                                                 </td>
+                                                <td className="p-3 border text-center">
+                                                    {/* BOTÃO PARA ABRIR A FOLHA DETALHADA */}
+                                                    <button onClick={() => setRelatorioDetalhado(rel)} className="bg-[#1351b4] text-white px-3 py-1 rounded text-xs hover:bg-blue-800 flex items-center gap-1 mx-auto transition shadow-sm">
+                                                        <FileText size={14}/> Abrir Folha
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))}
                                         {dadosRelatorio.length === 0 && (
-                                            <tr><td colSpan="4" className="p-10 text-center text-gray-400">Nenhum dado encontrado para o período selecionado.</td></tr>
+                                            <tr><td colSpan="5" className="p-10 text-center text-gray-400">Nenhum dado encontrado para o período selecionado.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -643,11 +698,98 @@ export default function AdminPage() {
                 )}
 
                 {/* =================================================
-                   VIEW 3: FICHA DO COLABORADOR (DETALHES)
+                   3. FOLHA DE PONTO DETALHADA (PARA IMPRESSÃO)
+                   =================================================
+                */}
+                {relatorioDetalhado && (
+                    <div className="bg-white p-8 max-w-4xl mx-auto shadow-lg print:shadow-none print:w-full animate-fade-in">
+                        {/* Header da Folha */}
+                        <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-6">
+                            <div>
+                                <h1 className="text-2xl font-black text-gray-900 uppercase tracking-wide">Pinguim Manoa</h1>
+                                <p className="text-sm text-gray-500 font-bold">Folha de Ponto Individual</p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-sm font-bold text-gray-900">Período: {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mesRelatorio]} / {anoRelatorio}</p>
+                                <p className="text-xs text-gray-400">Gerado em: {new Date().toLocaleString('pt-BR')}</p>
+                            </div>
+                        </div>
+
+                        {/* Dados do Colaborador */}
+                        <div className="mb-6 bg-gray-50 p-4 rounded border border-gray-200 print:bg-transparent print:border-gray-300">
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div><span className="font-bold text-gray-600">Colaborador:</span> <span className="text-gray-900 uppercase ml-2">{relatorioDetalhado.nome}</span></div>
+                                <div><span className="font-bold text-gray-600">Cargo:</span> <span className="text-gray-900 uppercase ml-2">{relatorioDetalhado.cargo || "Não informado"}</span></div>
+                                <div><span className="font-bold text-gray-600">Email:</span> <span className="text-gray-900 ml-2">{relatorioDetalhado.email}</span></div>
+                                <div><span className="font-bold text-gray-600">Saldo do Mês:</span> <span className={`font-bold ml-2 ${relatorioDetalhado.saldoMinutos >= 0 ? "text-green-700" : "text-red-700"}`}>{formatarSaldo(relatorioDetalhado.saldoMinutos)}</span></div>
+                            </div>
+                        </div>
+
+                        {/* Tabela de Dias */}
+                        <table className="w-full text-xs md:text-sm border-collapse border border-gray-300 mb-8">
+                            <thead className="bg-gray-100 print:bg-gray-200 text-gray-800 font-bold uppercase">
+                                <tr>
+                                    <th className="border border-gray-300 p-2 text-left">Data</th>
+                                    <th className="border border-gray-300 p-2 text-center">Entrada</th>
+                                    <th className="border border-gray-300 p-2 text-center">Saída</th>
+                                    <th className="border border-gray-300 p-2 text-center">H. Trab</th>
+                                    <th className="border border-gray-300 p-2 text-center">Saldo</th>
+                                    <th className="border border-gray-300 p-2 text-center">Situação</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {gerarDiasDoMesParaRelatorio(mesRelatorio, anoRelatorio, pontosGerais.filter(p => p.usuarioId === relatorioDetalhado.id)).map((dia, idx) => (
+                                    <tr key={idx} className="print:break-inside-avoid">
+                                        <td className="border border-gray-300 p-2 font-medium">{dia.diaNum} - {dia.diaSemana}</td>
+                                        <td className="border border-gray-300 p-2 text-center">{dia.entrada}</td>
+                                        <td className="border border-gray-300 p-2 text-center">{dia.saida}</td>
+                                        <td className="border border-gray-300 p-2 text-center font-mono">{dia.horasTrabalhadas}</td>
+                                        <td className={`border border-gray-300 p-2 text-center font-bold ${dia.saldoPositivo ? 'text-green-700' : 'text-red-600'}`}>{dia.saldo}</td>
+                                        <td className="border border-gray-300 p-2 text-center text-[10px] uppercase font-bold text-gray-500">{dia.status}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        {/* Assinaturas */}
+                        <div className="mt-16 grid grid-cols-2 gap-20 print:gap-10 page-break-inside-avoid">
+                            <div className="text-center">
+                                <div className="border-t border-black pt-2"></div>
+                                <p className="text-sm font-bold uppercase">Pinguim Manoa</p>
+                                <p className="text-xs text-gray-500">Empregador</p>
+                            </div>
+                            <div className="text-center">
+                                <div className="border-t border-black pt-2"></div>
+                                <p className="text-sm font-bold uppercase">{relatorioDetalhado.nome}</p>
+                                <p className="text-xs text-gray-500">Colaborador</p>
+                            </div>
+                        </div>
+
+                        {/* Botões de Controle (Somem na impressão) */}
+                        <div className="mt-8 flex flex-col md:flex-row justify-center gap-4 print:hidden">
+                            <button onClick={() => setRelatorioDetalhado(null)} className="px-6 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center justify-center gap-2 transition">
+                                <ArrowLeft size={18}/> Voltar
+                            </button>
+                            
+                            {/* BOTÃO DE ENVIAR EMAIL */}
+                            <button onClick={() => handleEnviarEmailRelatorio(relatorioDetalhado.nome)} className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg transition">
+                                <Mail size={18}/> Enviar por E-mail
+                            </button>
+
+                            {/* BOTÃO DE IMPRIMIR */}
+                            <button onClick={() => window.print()} className="px-6 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg transition">
+                                <Printer size={18}/> Imprimir Folha
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* =================================================
+                   VIEW 3: FICHA DE EDIÇÃO (DASHBOARD)
                    =================================================
                 */}
                 {usuarioSelecionado && (
-                    <div className="animate-fade-in space-y-6">
+                    <div className="animate-fade-in space-y-6 print:hidden">
                         {/* Header da Ficha */}
                         <div className="flex items-center justify-between">
                             <button onClick={() => setUsuarioSelecionado(null)} className="text-sm text-gray-500 hover:text-[#1351b4] flex items-center gap-1 font-bold transition">
@@ -726,7 +868,7 @@ export default function AdminPage() {
 
       {/* MODAL NOVO USUÁRIO (SEM CPF) */}
       {modalNovoUsuario && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm print:hidden">
               <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in">
                   <div className="flex justify-between items-center mb-6 border-b pb-2">
                       <h3 className="text-lg font-bold text-[#071d41]">Cadastrar Colaborador</h3>
@@ -760,7 +902,7 @@ export default function AdminPage() {
 
       {/* MODAL EDITAR USUÁRIO (SEM CPF) */}
       {modalEditarUsuario && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm print:hidden">
               <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in border-t-4 border-orange-500">
                   <div className="flex justify-between items-center mb-6">
                       <h3 className="text-lg font-bold text-[#071d41] flex items-center gap-2"><Edit3 size={20} className="text-orange-500"/> Editar Dados</h3>
@@ -789,13 +931,115 @@ export default function AdminPage() {
           </div>
       )}
 
+      {/* MODAL PERFIL DO ADMIN (NOVO) */}
+      {modalPerfilAdmin && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm print:hidden">
+              <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in border-t-4 border-blue-500">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-lg font-bold text-[#071d41] flex items-center gap-2">
+                          <Edit3 size={18} className="text-blue-500"/> Dados do Admin
+                      </h3>
+                      <button onClick={() => setModalPerfilAdmin(false)} className="text-gray-400 hover:text-red-500"><X/></button>
+                  </div>
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase">Nome de Exibição</label>
+                          <input className="w-full border p-2.5 rounded outline-none focus:border-blue-500" value={adminParaEditar.nome} onChange={e => setAdminParaEditar({...adminParaEditar, nome: e.target.value})} />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase">E-mail para Relatórios</label>
+                          <input className="w-full border p-2.5 rounded outline-none focus:border-blue-500" value={adminParaEditar.email} onChange={e => setAdminParaEditar({...adminParaEditar, email: e.target.value})} />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase">Cargo / Função</label>
+                          <input className="w-full border p-2.5 rounded outline-none focus:border-blue-500" value={adminParaEditar.cargo} onChange={e => setAdminParaEditar({...adminParaEditar, cargo: e.target.value})} />
+                      </div>
+                      <button onClick={salvarPerfilAdmin} className="w-full bg-blue-600 text-white font-bold py-3 rounded mt-2 hover:bg-blue-700 shadow-md transition">
+                          ATUALIZAR PERFIL
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
     </div>
   );
 }
 
 // ==========================================================
-// COMPONENTES AUXILIARES
+// FUNÇÕES AUXILIARES E COMPONENTES
 // ==========================================================
+
+// Helper Específico para a Folha de Ponto Impressa (Lógica Completa)
+function gerarDiasDoMesParaRelatorio(mes, ano, pontos) {
+    const dias = [];
+    const ultimoDia = new Date(ano, mes + 1, 0).getDate();
+    
+    for (let i = 1; i <= ultimoDia; i++) {
+        const data = new Date(ano, mes, i);
+        const dataStr = data.toLocaleDateString('pt-BR');
+        const diaSemana = data.toLocaleDateString('pt-BR', {weekday: 'short'}).replace('.', '');
+        
+        // Filtra pontos do dia
+        const pontosDia = pontos.filter(p => new Date(p.data).toLocaleDateString('pt-BR') === dataStr);
+        const entrada = pontosDia.find(p => p.tipo === 'Entrada');
+        const saida = pontosDia.filter(p => p.tipo === 'Saída').pop();
+
+        let entradaStr = "--:--";
+        let saidaStr = "--:--";
+        let horasTrabalhadas = "00:00";
+        let saldo = "00:00";
+        let status = "AUSÊNCIA / FOLGA";
+        let saldoPositivo = true;
+
+        if (entrada) {
+            entradaStr = new Date(entrada.data).toLocaleTimeString('pt-BR').slice(0,5);
+            status = "PRESENÇA"; // Se bateu entrada, já conta presença
+            
+            if (saida) {
+                saidaStr = new Date(saida.data).toLocaleTimeString('pt-BR').slice(0,5);
+                
+                // Cálculo com correção de madrugada
+                let dtEntrada = new Date(entrada.data);
+                let dtSaida = new Date(saida.data);
+                if (dtSaida < dtEntrada) dtSaida.setDate(dtSaida.getDate() + 1);
+
+                const diff = dtSaida - dtEntrada;
+                const hTrab = Math.floor(diff / 3600000);
+                const mTrab = Math.floor((diff % 3600000) / 60000);
+                horasTrabalhadas = `${String(hTrab).padStart(2,'0')}:${String(mTrab).padStart(2,'0')}`;
+
+                // Saldo (Meta 8h)
+                const meta = 8 * 3600000;
+                const saldoMs = diff - meta;
+                saldoPositivo = saldoMs >= 0;
+                const absSaldo = Math.abs(saldoMs);
+                const hSaldo = Math.floor(absSaldo / 3600000);
+                const mSaldo = Math.floor((absSaldo % 3600000) / 60000);
+                saldo = `${saldoPositivo ? '+' : '-'}${String(hSaldo).padStart(2,'0')}:${String(mSaldo).padStart(2,'0')}`;
+            } else {
+                // Só entrada: Deve 8 horas
+                saldo = "-08:00";
+                saldoPositivo = false;
+            }
+        } else {
+            // Nem entrada nem saída: Verifica se é fim de semana para mudar status visualmente se quiser (opcional)
+            // Aqui mantemos "Ausência/Folga"
+        }
+
+        dias.push({
+            diaNum: String(i).padStart(2,'0'),
+            diaSemana: diaSemana.toUpperCase(),
+            entrada: entradaStr,
+            saida: saidaStr,
+            horasTrabalhadas,
+            saldo,
+            saldoPositivo,
+            status
+        });
+    }
+    return dias;
+}
 
 // --- COMPONENTE DE LINHA DO DIA (AGORA COM PODERES DE EDIÇÃO) ---
 function ItemDiaAdmin({ dia, mensagem, usuarioId, onUpdate }) {
