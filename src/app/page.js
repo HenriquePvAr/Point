@@ -109,10 +109,20 @@ export default function Page() {
         const horaEntrada = new Date(primeiraEntrada.data);
         if (ultimaSaida) {
             // Se já encerrou o dia
-            msTrabalhados = new Date(ultimaSaida.data) - horaEntrada;
+            // CORREÇÃO DE MADRUGADA TAMBÉM NO RELÓGIO AO VIVO
+            let dtSaidaReal = new Date(ultimaSaida.data);
+            if (dtSaidaReal < horaEntrada) {
+                dtSaidaReal.setDate(dtSaidaReal.getDate() + 1);
+            }
+            msTrabalhados = dtSaidaReal - horaEntrada;
         } else {
             // Se ainda está trabalhando
-            msTrabalhados = agora - horaEntrada;
+            let agoraReal = new Date(agora);
+            // Se entrou ontem e hoje já é outro dia (mas antes das 03h)
+            if (agoraReal < horaEntrada) {
+                 agoraReal.setDate(agoraReal.getDate() + 1);
+            }
+            msTrabalhados = agoraReal - horaEntrada;
         }
         
         // Formata HH:MM:SS
@@ -642,16 +652,27 @@ function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
         if (mensagemSalva) setTextoMsg(mensagemSalva); 
     }, [mensagemSalva]);
 
-    // Cálculo de Saldo Diário
+    // === CÁLCULO INTELIGENTE DE SALDO (COM CORREÇÃO DE MADRUGADA) ===
     let saldoStr = "00:00";
     let saldoPositivo = true;
     const primeiraEntrada = dia.pontos.find(p => p.tipo === 'Entrada');
     const ultimaSaida = dia.pontos.filter(p => p.tipo === 'Saída').pop();
 
     if (primeiraEntrada && ultimaSaida) {
-        const diff = new Date(ultimaSaida.data) - new Date(primeiraEntrada.data);
-        const meta = 8 * 60 * 60 * 1000; // 8 horas em ms
+        let dtEntrada = new Date(primeiraEntrada.data);
+        let dtSaida = new Date(ultimaSaida.data);
+
+        // --- CORREÇÃO AQUI ---
+        // Se a hora de saída for menor que a entrada (Ex: Entrou 18h, Saiu 00h),
+        // consideramos que a saída foi no dia seguinte (+24h).
+        if (dtSaida < dtEntrada) {
+            dtSaida.setDate(dtSaida.getDate() + 1);
+        }
+
+        const diff = dtSaida - dtEntrada;
+        const meta = 8 * 60 * 60 * 1000; // Meta de 8 horas
         const saldoMs = diff - meta;
+        
         saldoPositivo = saldoMs >= 0;
         const absSaldo = Math.abs(saldoMs);
         const h = Math.floor(absSaldo / 3600000);
@@ -814,5 +835,5 @@ function gerarDiasDoMesSelecionado(mes, ano, historico) {
             pontos: pontosDoDia 
         });
     }
-    return dias; 
+    return dias.reverse(); // Mostra do dia 31 pro dia 1
 }
