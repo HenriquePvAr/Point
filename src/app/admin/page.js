@@ -40,22 +40,23 @@ export default function AdminPage() {
   const [view, setView] = useState("dashboard"); // Opções: 'dashboard', 'relatorios'
   const [loading, setLoading] = useState(true);
 
-  // Dados do Admin Logado (Novo Estado para controlar o perfil do Admin)
+  // Dados do Admin Logado (Agora carregado do Banco)
   const [adminUser, setAdminUser] = useState({
-      nome: "Admin Master",
-      email: "admin@pinguim.com",
-      cargo: "Gestor Geral"
+      id: null,
+      nome: "Carregando...",
+      email: "...",
+      cargo: "Gestor"
   });
 
   // Dados Principais (Banco de Dados Local)
   const [usuarios, setUsuarios] = useState([]);
   const [pontosGerais, setPontosGerais] = useState([]);
-  const [folgasGerais, setFolgasGerais] = useState([]); // <--- NOVO: Armazena as folgas
-  const [todasMensagens, setTodasMensagens] = useState([]); // Armazena as justificativas do servidor
+  const [folgasGerais, setFolgasGerais] = useState([]); // Armazena as folgas de todos
+  const [todasMensagens, setTodasMensagens] = useState([]); // Armazena as justificativas
   
   // Notificações e Atividades Recentes
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
-  const [notificacoes, setNotificacoes] = useState([]); // Busca da tabela correta
+  const [notificacoes, setNotificacoes] = useState([]); 
 
   // Busca e Seleção de Usuário
   const [termoBusca, setTermoBusca] = useState("");
@@ -65,12 +66,12 @@ export default function AdminPage() {
   // Modais (Pop-ups)
   const [modalNovoUsuario, setModalNovoUsuario] = useState(false);
   const [modalEditarUsuario, setModalEditarUsuario] = useState(false);
-  const [modalPerfilAdmin, setModalPerfilAdmin] = useState(false); // <--- Novo Modal para o Admin
+  const [modalPerfilAdmin, setModalPerfilAdmin] = useState(false); // Modal do Admin
 
   // Formulários
   const [novoUser, setNovoUser] = useState({ nome: "", email: "", cargo: "" });
   const [usuarioParaEditar, setUsuarioParaEditar] = useState({});
-  const [adminParaEditar, setAdminParaEditar] = useState({}); // <--- Form do Admin
+  const [adminParaEditar, setAdminParaEditar] = useState({}); // Form do Admin
 
   // Filtros de Data (Ficha Individual)
   const [mesFicha, setMesFicha] = useState(new Date().getMonth());
@@ -102,18 +103,28 @@ export default function AdminPage() {
         
         const dataUsers = await resUsers.json();
         
+        // --- LÓGICA PARA IDENTIFICAR O ADMIN ---
+        // Pega o primeiro usuário do tipo 'admin' para preencher o perfil no topo
+        const adminEncontrado = dataUsers.find(u => u.tipo === 'admin');
+        if (adminEncontrado) {
+            setAdminUser(adminEncontrado);
+        } else {
+            // Fallback caso não ache (apenas visual)
+            setAdminUser({ nome: "Admin Master", email: "admin@sistema.com", cargo: "Gestor", id: null });
+        }
+
         let todosPontos = [];
         let todasFolgas = [];
 
         // 2. Buscar pontos e folgas de todos os usuários
         for (let user of dataUsers) {
             try {
-              // Pontos
+              // Buscar Pontos
               const resPonto = await fetch(`/api/ponto?userId=${user.id}`);
               const dataPonto = await resPonto.json();
               todosPontos = [...todosPontos, ...dataPonto];
 
-              // Folgas
+              // Buscar Folgas
               const resFolga = await fetch(`/api/folgas?userId=${user.id}`);
               const dataFolga = await resFolga.json(); // Array de strings ["2026-01-20"]
               
@@ -159,10 +170,10 @@ export default function AdminPage() {
       const relatorio = usuarios.map(user => {
           const ultimoDia = new Date(anoRelatorio, mesRelatorio + 1, 0).getDate();
           
-          let diasTrabalhadosEsperados = 0;
-          let diasFolgaCount = 0;
+          let diasTrabalhadosEsperados = 0; // Dias que deveriam ter trabalho
+          let diasFolgaCount = 0;           // Dias marcados como folga
           let minutosTrabalhados = 0;
-          let diasFaltosos = []; // Apenas visual
+          let diasFaltosos = []; // Apenas visual para contagem simples
           const hoje = new Date(); 
 
           for (let i = 1; i <= ultimoDia; i++) {
@@ -187,7 +198,7 @@ export default function AdminPage() {
               const entrada = pontosDia.find(p => p.tipo === 'Entrada');
               const tevePonto = pontosDia.length > 0;
               
-              // Lógica de Falta visual
+              // Lógica de Falta (Passado, sem ponto e não é folga)
               const dataAtualSemHora = new Date(dataAtual.toDateString());
               const hojeSemHora = new Date(hoje.toDateString());
 
@@ -195,7 +206,7 @@ export default function AdminPage() {
                   diasFaltosos.push(`${i}/${mesRelatorio + 1}`);
               }
 
-              // Calcula horas trabalhadas
+              // Calcula horas trabalhadas no dia
               if (entrada) {
                   const ultimaSaida = pontosDia.filter(p => p.tipo === 'Saída').pop();
                   if (ultimaSaida) {
@@ -234,19 +245,43 @@ export default function AdminPage() {
   // 4. AÇÕES E EMAIL
   // ==========================================================
 
-  // -- Edição do Admin --
+  // -- Edição do Admin (ABRIR) --
   function abrirEdicaoAdmin() {
       setAdminParaEditar({ ...adminUser });
       setModalPerfilAdmin(true);
   }
 
-  function salvarPerfilAdmin() {
-      setAdminUser(adminParaEditar);
-      setModalPerfilAdmin(false);
-      toast.success("Perfil do Administrador atualizado!");
+  // -- Edição do Admin (SALVAR NO BANCO) --
+  async function salvarPerfilAdmin() {
+      if (!adminUser.id) return toast.error("ID do admin não encontrado.");
+
+      try {
+          const res = await fetch('/api/usuarios', {
+              method: 'PUT',
+              body: JSON.stringify({
+                  id: adminUser.id,
+                  nome: adminParaEditar.nome,
+                  email: adminParaEditar.email,
+                  cargo: adminParaEditar.cargo
+              })
+          });
+
+          const data = await res.json();
+
+          if (data.success) {
+              setAdminUser(adminParaEditar); // Atualiza visual
+              setModalPerfilAdmin(false);
+              toast.success("Perfil atualizado com sucesso!");
+              carregarDados(); // Recarrega para garantir
+          } else {
+              toast.error(data.message || "Erro ao atualizar.");
+          }
+      } catch (e) {
+          toast.error("Erro de conexão.");
+      }
   }
 
-  // -- Envio de Email do Relatório (INTEGRAÇÃO REAL) --
+  // -- Envio de Email do Relatório (AGORA VIA API REAL) --
   async function handleEnviarEmailRelatorio(colaborador) {
       const toastId = toast.loading(`Gerando relatório de ${colaborador.nome}...`);
       
@@ -303,7 +338,7 @@ export default function AdminPage() {
             </div>
           `;
 
-          // 3. Envia para API
+          // 3. Chama a API Real
           const res = await fetch('/api/email/enviar-relatorio', {
               method: 'POST',
               body: JSON.stringify({
@@ -317,38 +352,29 @@ export default function AdminPage() {
           if (data.success) {
               toast.success(`Enviado com sucesso para ${adminUser.email}!`, { id: toastId });
           } else {
-              throw new Error("Falha no envio.");
+              throw new Error("Falha no envio. Verifique o servidor.");
           }
 
       } catch (e) {
           console.error(e);
-          toast.error("Erro ao enviar email. Verifique o console.", { id: toastId });
+          toast.error("Erro ao enviar email.", { id: toastId });
       }
   }
 
   // --- Criar Novo Usuário ---
   async function handleNovoUsuario() {
-      if(!novoUser.nome || !novoUser.email) return toast.warning("Nome e E-mail são campos obrigatórios.");
-      
+      if(!novoUser.nome || !novoUser.email) return toast.warning("Preencha os campos obrigatórios.");
       try {
-        const res = await fetch("/api/usuarios", {
-            method: "POST",
-            body: JSON.stringify(novoUser)
-        });
+        const res = await fetch("/api/usuarios", { method: "POST", body: JSON.stringify(novoUser) });
         const data = await res.json();
-
         if (data.success) {
             setUsuarios([...usuarios, data.usuario]);
             setModalNovoUsuario(false);
             setNovoUser({ nome: "", email: "", cargo: "" });
             toast.success("Colaborador criado com sucesso!");
-            carregarDados(); // Atualiza tudo para garantir
-        } else {
-            toast.error(data.message);
-        }
-      } catch (error) {
-          toast.error("Erro ao conectar com o servidor.");
-      }
+            carregarDados(); 
+        } else { toast.error(data.message); }
+      } catch (error) { toast.error("Erro ao conectar com o servidor."); }
   }
 
   // --- Abrir Modal de Edição ---
@@ -360,75 +386,44 @@ export default function AdminPage() {
   // --- Salvar Edição ---
   async function handleSalvarEdicao() {
       try {
-          const res = await fetch('/api/usuarios', {
-              method: 'PUT',
-              body: JSON.stringify(usuarioParaEditar)
-          });
+          const res = await fetch('/api/usuarios', { method: 'PUT', body: JSON.stringify(usuarioParaEditar) });
           const data = await res.json();
-          
           if (data.success) {
               toast.success("Dados do colaborador atualizados!");
               setModalEditarUsuario(false);
-              carregarDados(); // Recarrega a lista
-          } else {
-              toast.error(data.message);
-          }
-      } catch (e) { 
-          toast.error("Erro ao salvar alterações."); 
-      }
+              carregarDados(); 
+          } else { toast.error(data.message); }
+      } catch (e) { toast.error("Erro ao salvar alterações."); }
   }
 
   // --- Bloquear / Desbloquear Usuário ---
   async function toggleStatusUsuario(user) {
       const novoStatus = user.status === 'ativo' ? 'inativo' : 'ativo';
-      
       if (confirm(`Tem certeza que deseja ${novoStatus === 'ativo' ? 'ativar' : 'bloquear'} o acesso de ${user.nome}?`)) {
           try {
-              // Chama a API para persistir a mudança
-              const res = await fetch('/api/usuarios', {
-                  method: 'PUT',
-                  body: JSON.stringify({ id: user.id, status: novoStatus })
-              });
+              const res = await fetch('/api/usuarios', { method: 'PUT', body: JSON.stringify({ id: user.id, status: novoStatus }) });
               const data = await res.json();
-
               if (data.success) {
-                  // Atualiza a lista localmente para feedback instantâneo
                   const atualizados = usuarios.map(u => u.id === user.id ? {...u, status: novoStatus} : u);
                   setUsuarios(atualizados);
-                  
-                  // Se estiver com ele aberto, atualiza o status também
-                  if (usuarioSelecionado && usuarioSelecionado.id === user.id) {
-                      setUsuarioSelecionado({...user, status: novoStatus});
-                  }
-                  
-                  toast.success(`Usuário ${novoStatus === 'ativo' ? 'ativado' : 'bloqueado'} com sucesso!`);
-              } else {
-                  toast.error("Erro ao salvar status no servidor.");
-              }
-          } catch (e) {
-              toast.error("Erro de conexão com o servidor.");
-          }
+                  if (usuarioSelecionado?.id === user.id) setUsuarioSelecionado({...user, status: novoStatus});
+                  toast.success(`Status alterado para ${novoStatus}!`);
+              } else { toast.error("Erro ao salvar status."); }
+          } catch (e) { toast.error("Erro de conexão."); }
       }
   }
 
   // --- EXCLUIR USUÁRIO ---
   async function handleExcluirUsuario(user) {
-    if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?\n\nIsso apagará todo o histórico de pontos e mensagens deste colaborador.\nEssa ação não pode ser desfeita.`)) {
+    if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?\n\nIsso apagará todo o histórico de pontos e mensagens deste colaborador.`)) {
         try {
             const res = await fetch(`/api/usuarios?id=${user.id}`, { method: 'DELETE' });
-            
             if (res.ok) {
                 toast.success("Usuário excluído com sucesso.");
-                setUsuarios(usuarios.filter(u => u.id !== user.id)); // Remove da lista local
-                carregarDados(); // Recarrega para garantir
-            } else {
-                const data = await res.json().catch(() => ({})); 
-                toast.error(data.message || "Erro ao excluir usuário.");
-            }
-        } catch (e) {
-            console.error(e);
-            toast.error("Erro de conexão com o servidor.");
-        }
+                setUsuarios(usuarios.filter(u => u.id !== user.id)); 
+                carregarDados(); 
+            } else { toast.error("Erro ao excluir usuário."); }
+        } catch (e) { toast.error("Erro de conexão."); }
     }
   }
 
@@ -441,9 +436,7 @@ export default function AdminPage() {
 
       if (pontosHoje.length === 0) return "offline";
       const ultimoPonto = pontosHoje[pontosHoje.length - 1];
-      
-      if (['Entrada', 'Volta Intervalo'].includes(ultimoPonto.tipo)) return "online";
-      return "pausa"; 
+      return ['Entrada', 'Volta Intervalo'].includes(ultimoPonto.tipo) ? "online" : "pausa"; 
   }
 
   // Helper para encontrar mensagem/justificativa de um dia específico
@@ -454,7 +447,6 @@ export default function AdminPage() {
       return msg ? msg.texto : null;
   }
 
-  // Filtro da barra de busca
   const usuariosFiltrados = usuarios.filter(u => 
     u.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
     (u.email && u.email.toLowerCase().includes(termoBusca.toLowerCase()))
@@ -495,7 +487,7 @@ export default function AdminPage() {
       {/* ======================= CONTEÚDO PRINCIPAL ======================= */}
       <main className="ml-64 flex-1 p-8 print:ml-0 print:p-0 print:w-full">
         
-        {/* HEADER SUPERIOR (Escondido na impressão) */}
+        {/* HEADER SUPERIOR */}
         <header className="flex justify-between items-center mb-8 relative print:hidden">
             <div>
                 <h2 className="text-2xl font-bold text-[#071d41]">
@@ -547,7 +539,7 @@ export default function AdminPage() {
                         <p className="text-xs text-gray-500">{adminUser.cargo}</p>
                     </div>
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md relative group">
-                        {adminUser.nome.substring(0, 2).toUpperCase()}
+                        {adminUser.nome ? adminUser.nome.substring(0, 2).toUpperCase() : "AD"}
                         
                         {/* Botão de Editar Perfil Admin */}
                         <button 
@@ -647,6 +639,7 @@ export default function AdminPage() {
                                                     <td className="p-4">
                                                         <div className="font-bold text-[#071d41] text-base">{user.nome}</div>
                                                         <div className="text-xs text-gray-400 flex flex-col">
+                                                            {/* CPF REMOVIDO, AGORA MOSTRA APENAS EMAIL */}
                                                             {user.email ? <span>{user.email}</span> : <span>Sem e-mail</span>}
                                                         </div>
                                                     </td>
@@ -673,6 +666,7 @@ export default function AdminPage() {
                                                             >
                                                                 <Edit3 size={18} />
                                                             </button>
+                                                            {/* BOTÃO DE EXCLUIR (LIXEIRA) ADICIONADO */}
                                                             <button 
                                                                 onClick={() => handleExcluirUsuario(user)} 
                                                                 className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200 transition"
@@ -723,7 +717,7 @@ export default function AdminPage() {
                                             <th className="p-3 border">Colaborador</th>
                                             <th className="p-3 border text-center">Horas Trabalhadas</th>
                                             <th className="p-3 border text-center">Saldo de Horas</th>
-                                            <th className="p-3 border text-center">Folgas / Ausências</th>
+                                            <th className="p-3 border text-center">Dias de Folga</th>
                                             <th className="p-3 border text-center">Ação</th>
                                         </tr>
                                     </thead>
@@ -732,6 +726,7 @@ export default function AdminPage() {
                                             <tr key={rel.id} className="hover:bg-gray-50 transition">
                                                 <td className="p-3 border font-bold text-[#071d41]">
                                                     {rel.nome}<br/>
+                                                    {/* MOSTRANDO EMAIL AO INVÉS DE CPF */}
                                                     <span className="text-[10px] text-gray-400 font-normal">{rel.email}</span>
                                                 </td>
                                                 <td className="p-3 border text-center font-mono text-gray-700 font-medium">{rel.totalHoras}</td>
@@ -746,6 +741,7 @@ export default function AdminPage() {
                                                     </span>
                                                 </td>
                                                 <td className="p-3 border text-center">
+                                                    {/* BOTÃO PARA ABRIR A FOLHA DETALHADA */}
                                                     <button onClick={() => setRelatorioDetalhado(rel)} className="bg-[#1351b4] text-white px-3 py-1 rounded text-xs hover:bg-blue-800 flex items-center gap-1 mx-auto transition shadow-sm">
                                                         <FileText size={14}/> Abrir Folha
                                                     </button>
@@ -757,6 +753,10 @@ export default function AdminPage() {
                                         )}
                                     </tbody>
                                 </table>
+                            </div>
+                            <div className="mt-4 p-4 bg-blue-50 rounded border border-blue-100 text-xs text-blue-800 flex items-start gap-2">
+                                <AlertCircle size={16} className="mt-0.5"/>
+                                <p><strong>Nota do Sistema:</strong> Dias marcados como Folga não descontam horas do saldo. Dias sem ponto e sem folga descontam 8 horas.</p>
                             </div>
                         </div>
                     </div>
@@ -809,7 +809,7 @@ export default function AdminPage() {
                                         <td className="border border-gray-300 p-2 text-center">{dia.entrada}</td>
                                         <td className="border border-gray-300 p-2 text-center">{dia.saida}</td>
                                         <td className="border border-gray-300 p-2 text-center font-mono">{dia.horasTrabalhadas}</td>
-                                        <td className={`border border-gray-300 p-2 text-center font-bold ${dia.saldoPositivo ? 'text-green-700' : (dia.saldo === '00:00' ? 'text-gray-400' : 'text-red-600')}`}>{dia.saldo}</td>
+                                        <td className={`border border-gray-300 p-2 text-center font-bold ${dia.saldoPositivo ? 'text-green-700' : 'text-red-600'}`}>{dia.saldo}</td>
                                         <td className="border border-gray-300 p-2 text-center text-[10px] uppercase font-bold text-gray-500">{dia.status}</td>
                                     </tr>
                                 ))}
@@ -849,14 +849,10 @@ export default function AdminPage() {
                     </div>
                 )}
 
-                {/* =================================================
-                   VIEW 3: FICHA DE EDIÇÃO (DASHBOARD)
-                   =================================================
-                */}
+                {/* 4. EDIÇÃO HISTÓRICO (DASHBOARD) */}
                 {usuarioSelecionado && (
                     <div className="animate-fade-in space-y-6 print:hidden">
-                        {/* Header da Ficha */}
-                        <div className="flex items-center justify-between">
+                        <div className="flex justify-between items-center">
                             <button onClick={() => setUsuarioSelecionado(null)} className="text-sm text-gray-500 hover:text-[#1351b4] flex items-center gap-1 font-bold transition">
                                 <ChevronDown size={16} className="rotate-90"/> Voltar para Lista
                             </button>
@@ -881,6 +877,7 @@ export default function AdminPage() {
                                     <div className="text-gray-500 text-sm flex gap-2">
                                         <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">{usuarioSelecionado.cargo}</span>
                                     </div>
+                                    {/* CPF REMOVIDO, APENAS EMAIL */}
                                     <p className="text-gray-400 text-xs mt-1">{usuarioSelecionado.email || "Sem e-mail cadastrado"}</p>
                                 </div>
                             </div>
@@ -976,6 +973,7 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input placeholder="Ex: João Silva" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.nome} onChange={e => setNovoUser({...novoUser, nome: e.target.value})} />
                       </div>
+                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail (Login)</label>
                           <input placeholder="email@exemplo.com" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.email} onChange={e => setNovoUser({...novoUser, email: e.target.value})} />
@@ -1009,6 +1007,7 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.nome} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, nome: e.target.value})} />
                       </div>
+                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.email} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, email: e.target.value})} />
