@@ -12,7 +12,7 @@ import {
   UserX, 
   Eye, 
   UserPlus, 
-  PlusCircle, // <--- ADICIONADO
+  PlusCircle, 
   MessageCircle, 
   ChevronDown, 
   ChevronUp, 
@@ -99,7 +99,6 @@ export default function AdminPage() {
         const dataMsg = await resMsgs.json();
 
         // 4. Buscar Notificações da tabela NOVA (Correção)
-        // Lembre-se: Só vai aparecer aqui quem bater ponto DEPOIS da atualização.
         const resNotif = await fetch('/api/notificacoes');
         const dataNotif = await resNotif.json();
         
@@ -170,7 +169,12 @@ export default function AdminPage() {
               if (entrada) {
                   const ultimaSaida = pontosDia.filter(p => p.tipo === 'Saída').pop();
                   if (ultimaSaida) {
-                      const diff = new Date(ultimaSaida.data) - new Date(entrada.data);
+                      // CORREÇÃO DE MADRUGADA NO RELATÓRIO
+                      let dtEntrada = new Date(entrada.data);
+                      let dtSaida = new Date(ultimaSaida.data);
+                      if (dtSaida < dtEntrada) dtSaida.setDate(dtSaida.getDate() + 1);
+
+                      const diff = dtSaida - dtEntrada;
                       minutosTrabalhados += Math.floor(diff / 60000); // converte ms para minutos
                   }
               }
@@ -286,12 +290,10 @@ export default function AdminPage() {
       }
   }
 
-  // --- EXCLUIR USUÁRIO (NOVA FUNÇÃO) ---
+  // --- EXCLUIR USUÁRIO ---
   async function handleExcluirUsuario(user) {
     if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?\n\nIsso apagará todo o histórico de pontos e mensagens deste colaborador.\nEssa ação não pode ser desfeita.`)) {
         try {
-            // Nota: Se sua API ainda não tiver o DELETE implementado, isso vai dar erro.
-            // Mas a função está aqui pronta para uso.
             const res = await fetch(`/api/usuarios?id=${user.id}`, { method: 'DELETE' });
             
             if (res.ok) {
@@ -424,7 +426,7 @@ export default function AdminPage() {
                         <p className="text-xs text-gray-500">Dono</p>
                     </div>
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md">
-                        AD
+                        TS
                     </div>
                 </div>
             </div>
@@ -515,7 +517,6 @@ export default function AdminPage() {
                                                     <td className="p-4">
                                                         <div className="font-bold text-[#071d41] text-base">{user.nome}</div>
                                                         <div className="text-xs text-gray-400 flex flex-col">
-                                                            {/* CPF REMOVIDO, AGORA MOSTRA APENAS EMAIL */}
                                                             {user.email ? <span>{user.email}</span> : <span>Sem e-mail</span>}
                                                         </div>
                                                     </td>
@@ -542,7 +543,6 @@ export default function AdminPage() {
                                                             >
                                                                 <Edit3 size={18} />
                                                             </button>
-                                                            {/* BOTÃO DE EXCLUIR (LIXEIRA) ADICIONADO */}
                                                             <button 
                                                                 onClick={() => handleExcluirUsuario(user)} 
                                                                 className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200 transition"
@@ -601,7 +601,6 @@ export default function AdminPage() {
                                             <tr key={rel.id} className="hover:bg-gray-50 transition">
                                                 <td className="p-3 border font-bold text-[#071d41]">
                                                     {rel.nome}<br/>
-                                                    {/* MOSTRANDO EMAIL AO INVÉS DE CPF */}
                                                     <span className="text-[10px] text-gray-400 font-normal">{rel.email}</span>
                                                 </td>
                                                 <td className="p-3 border text-center font-mono text-gray-700 font-medium">{rel.totalHoras}</td>
@@ -670,7 +669,6 @@ export default function AdminPage() {
                                     <div className="text-gray-500 text-sm flex gap-2">
                                         <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">{usuarioSelecionado.cargo}</span>
                                     </div>
-                                    {/* CPF REMOVIDO, APENAS EMAIL */}
                                     <p className="text-gray-400 text-xs mt-1">{usuarioSelecionado.email || "Sem e-mail cadastrado"}</p>
                                 </div>
                             </div>
@@ -701,7 +699,6 @@ export default function AdminPage() {
                                         key={idx} 
                                         dia={dia} 
                                         mensagem={getMensagemDia(dia.dataIso)} 
-                                        // AQUI PASSAMOS AS NOVAS PROPS NECESSÁRIAS
                                         usuarioId={usuarioSelecionado.id}
                                         onUpdate={carregarDados}
                                     />
@@ -733,7 +730,6 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input placeholder="Ex: João Silva" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.nome} onChange={e => setNovoUser({...novoUser, nome: e.target.value})} />
                       </div>
-                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail (Login)</label>
                           <input placeholder="email@exemplo.com" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.email} onChange={e => setNovoUser({...novoUser, email: e.target.value})} />
@@ -767,7 +763,6 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.nome} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, nome: e.target.value})} />
                       </div>
-                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.email} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, email: e.target.value})} />
@@ -803,14 +798,22 @@ function ItemDiaAdmin({ dia, mensagem, usuarioId, onUpdate }) {
     const [adicionando, setAdicionando] = useState(false);
     const [novoPonto, setNovoPonto] = useState({ hora: "08:00", tipo: "Entrada" });
 
-    // Cálculo do Saldo (mantido igual)
+    // === CÁLCULO DE SALDO (Com Correção de Madrugada) ===
     let saldoStr = "00:00";
     let saldoPositivo = true;
     const primeiraEntrada = dia.pontos.find(p => p.tipo === 'Entrada');
     const ultimaSaida = dia.pontos.filter(p => p.tipo === 'Saída').pop();
 
     if (primeiraEntrada && ultimaSaida) {
-        const diff = new Date(ultimaSaida.data) - new Date(primeiraEntrada.data);
+        let dtEntrada = new Date(primeiraEntrada.data);
+        let dtSaida = new Date(ultimaSaida.data);
+
+        // SE A SAÍDA FOR MENOR QUE A ENTRADA (Ex: 00:00 < 18:00), FOI NO DIA SEGUINTE
+        if (dtSaida < dtEntrada) {
+            dtSaida.setDate(dtSaida.getDate() + 1);
+        }
+
+        const diff = dtSaida - dtEntrada;
         const meta = 8 * 60 * 60 * 1000; 
         const saldoMs = diff - meta;
         saldoPositivo = saldoMs >= 0;
@@ -900,7 +903,24 @@ function ItemDiaAdmin({ dia, mensagem, usuarioId, onUpdate }) {
             >
                 <div onClick={() => setAberto(!aberto)} className="flex flex-col cursor-pointer flex-1">
                     <span className="font-bold text-sm text-[#071d41]">{dia.dataFormatada}</span>
-                    <span className="text-xs text-gray-400">{dia.diaSemana}</span>
+                    
+                    {/* AQUI ESTÁ A CORREÇÃO VISUAL QUE VOCÊ PEDIU */}
+                    <div className="flex gap-2 mt-1">
+                        {primeiraEntrada ? (
+                            <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200 font-bold uppercase">
+                                Presença
+                            </span>
+                        ) : (
+                            <span className="text-[10px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded border border-gray-200 font-bold uppercase">
+                                Ausente
+                            </span>
+                        )}
+                        {primeiraEntrada && (
+                            <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${saldoPositivo ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                                Saldo: {saldoStr}
+                            </span>
+                        )}
+                    </div>
                 </div>
                 
                 <div className="flex items-center gap-3">
