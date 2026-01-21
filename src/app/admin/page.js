@@ -12,6 +12,7 @@ import {
   UserX, 
   Eye, 
   UserPlus, 
+  PlusCircle, // <--- ADICIONADO
   MessageCircle, 
   ChevronDown, 
   ChevronUp, 
@@ -419,8 +420,8 @@ export default function AdminPage() {
                 {/* PERFIL DO ADMIN */}
                 <div className="flex items-center gap-3 pl-4 border-l">
                     <div className="text-right hidden md:block">
-                        <p className="text-sm font-bold text-[#071d41]">Admin Master</p>
-                        <p className="text-xs text-gray-500">Gestor de RH</p>
+                        <p className="text-sm font-bold text-[#071d41]">Thiago</p>
+                        <p className="text-xs text-gray-500">Dono</p>
                     </div>
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md">
                         AD
@@ -700,6 +701,9 @@ export default function AdminPage() {
                                         key={idx} 
                                         dia={dia} 
                                         mensagem={getMensagemDia(dia.dataIso)} 
+                                        // AQUI PASSAMOS AS NOVAS PROPS NECESSÁRIAS
+                                        usuarioId={usuarioSelecionado.id}
+                                        onUpdate={carregarDados}
                                     />
                                 ))}
                              </div>
@@ -789,10 +793,17 @@ export default function AdminPage() {
 // COMPONENTES AUXILIARES
 // ==========================================================
 
-function ItemDiaAdmin({ dia, mensagem }) {
+// --- COMPONENTE DE LINHA DO DIA (AGORA COM PODERES DE EDIÇÃO) ---
+function ItemDiaAdmin({ dia, mensagem, usuarioId, onUpdate }) {
     const [aberto, setAberto] = useState(false);
     
-    // Cálculo do Saldo Diário para o Admin ver rápido
+    // Estados para Edição/Criação
+    const [editandoId, setEditandoId] = useState(null);
+    const [editValues, setEditValues] = useState({ hora: "", tipo: "" });
+    const [adicionando, setAdicionando] = useState(false);
+    const [novoPonto, setNovoPonto] = useState({ hora: "08:00", tipo: "Entrada" });
+
+    // Cálculo do Saldo (mantido igual)
     let saldoStr = "00:00";
     let saldoPositivo = true;
     const primeiraEntrada = dia.pontos.find(p => p.tipo === 'Entrada');
@@ -800,7 +811,7 @@ function ItemDiaAdmin({ dia, mensagem }) {
 
     if (primeiraEntrada && ultimaSaida) {
         const diff = new Date(ultimaSaida.data) - new Date(primeiraEntrada.data);
-        const meta = 8 * 60 * 60 * 1000; // 8 horas em ms
+        const meta = 8 * 60 * 60 * 1000; 
         const saldoMs = diff - meta;
         saldoPositivo = saldoMs >= 0;
         const absSaldo = Math.abs(saldoMs);
@@ -809,69 +820,209 @@ function ItemDiaAdmin({ dia, mensagem }) {
         saldoStr = `${saldoPositivo ? '' : '-'}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
     }
 
+    // --- AÇÕES DO ADMIN ---
+
+    // 1. Excluir Ponto
+    async function handleExcluir(id) {
+        if (!confirm("Tem certeza que deseja apagar este registro?")) return;
+        try {
+            const res = await fetch(`/api/ponto?id=${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                toast.success("Registro apagado.");
+                onUpdate(); // Atualiza a tela
+            }
+        } catch (e) { toast.error("Erro ao excluir."); }
+    }
+
+    // 2. Iniciar Edição (Abre os inputs na linha)
+    function iniciarEdicao(ponto) {
+        const dataObj = new Date(ponto.data);
+        const horaFormatada = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        setEditValues({ hora: horaFormatada, tipo: ponto.tipo });
+        setEditandoId(ponto.id);
+    }
+
+    // 3. Salvar Edição
+    async function salvarEdicao(idOriginal, dataOriginal) {
+        try {
+            const dataBase = new Date(dataOriginal);
+            const [h, m] = editValues.hora.split(':');
+            dataBase.setHours(parseInt(h), parseInt(m));
+
+            const res = await fetch('/api/ponto', {
+                method: 'PUT',
+                body: JSON.stringify({ 
+                    id: idOriginal, 
+                    novaData: dataBase.toISOString(), 
+                    novoTipo: editValues.tipo 
+                })
+            });
+            
+            if (res.ok) {
+                toast.success("Ponto atualizado!");
+                setEditandoId(null);
+                onUpdate();
+            }
+        } catch (e) { toast.error("Erro ao salvar."); }
+    }
+
+    // 4. Salvar Novo Ponto Manual (Essa é a mágica do Admin)
+    async function salvarNovoPonto() {
+        try {
+            // Pega a data do dia que estamos vendo (YYYY-MM-DD)
+            const [ano, mes, diaMes] = dia.dataIso.split('-');
+            const dataFinal = new Date(ano, mes - 1, diaMes);
+            const [h, m] = novoPonto.hora.split(':');
+            dataFinal.setHours(parseInt(h), parseInt(m));
+
+            const res = await fetch('/api/ponto', {
+                method: 'POST',
+                body: JSON.stringify({
+                    modoAdmin: true, // <--- O SEGREDO: Essa flag libera sem GPS
+                    usuarioId: usuarioId,
+                    tipo: novoPonto.tipo,
+                    dataManual: dataFinal.toISOString()
+                })
+            });
+
+            if (res.ok) {
+                toast.success("Ponto adicionado!");
+                setAdicionando(false);
+                onUpdate();
+            }
+        } catch (e) { toast.error("Erro ao criar ponto."); }
+    }
+
     return (
-        <div>
+        <div className="border-b border-gray-100 last:border-0">
             <div 
-                onClick={() => setAberto(!aberto)} 
-                className={`flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition ${aberto ? 'bg-blue-50/50' : ''}`}
+                className={`flex items-center justify-between p-4 hover:bg-gray-50 transition ${aberto ? 'bg-blue-50/50' : ''}`}
             >
-                <div className="flex flex-col">
+                <div onClick={() => setAberto(!aberto)} className="flex flex-col cursor-pointer flex-1">
                     <span className="font-bold text-sm text-[#071d41]">{dia.dataFormatada}</span>
                     <span className="text-xs text-gray-400">{dia.diaSemana}</span>
                 </div>
-                <div className="flex items-center gap-4">
-                    {mensagem && (
-                        <div className="flex items-center gap-1 text-xs text-blue-600 font-bold bg-blue-100 px-2 py-1 rounded">
-                            <MessageCircle size={14} /> MSG
-                        </div>
-                    )}
-                    <div className="text-right text-xs font-mono text-gray-600 hidden md:block">
-                        {primeiraEntrada ? new Date(primeiraEntrada.data).toLocaleTimeString('pt-BR').slice(0,5) : '--:--'} 
-                        {' - '} 
-                        {ultimaSaida ? new Date(ultimaSaida.data).toLocaleTimeString('pt-BR').slice(0,5) : '--:--'}
+                
+                <div className="flex items-center gap-3">
+                    {/* Botão ADD (Só aparece pro Admin) */}
+                    <button 
+                        onClick={() => { setAberto(true); setAdicionando(true); }}
+                        className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200 flex items-center gap-1 font-bold shadow-sm"
+                        title="Adicionar ponto manual"
+                    >
+                        <PlusCircle size={14}/> Add
+                    </button>
+
+                    <div onClick={() => setAberto(!aberto)} className="cursor-pointer text-gray-400 hover:text-blue-600">
+                        {aberto ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                     </div>
-                    {primeiraEntrada && (
-                        <div className={`w-20 text-center text-xs font-bold text-white px-2 py-1 rounded-full ${saldoPositivo ? 'bg-green-500' : 'bg-red-400'}`}>
-                            {saldoStr}
-                        </div>
-                    )}
-                    {aberto ? <ChevronUp size={18} className="text-gray-300" /> : <ChevronDown size={18} className="text-gray-300" />}
                 </div>
             </div>
             
-            {/* Detalhes expandidos */}
             {aberto && (
-                <div className="bg-gray-50 p-4 border-t border-gray-100 pl-8 animate-fade-in">
+                <div className="bg-gray-50 p-4 pl-4 md:pl-8 animate-fade-in border-t border-gray-100 shadow-inner">
+                    
+                    {/* FORMULÁRIO DE NOVO PONTO */}
+                    {adicionando && (
+                        <div className="bg-white border-l-4 border-green-500 p-3 rounded shadow-sm mb-4 flex flex-wrap items-center gap-2 animate-scale-in">
+                            <span className="text-xs font-bold text-green-700 uppercase mr-2">Novo:</span>
+                            <select 
+                                value={novoPonto.tipo} 
+                                onChange={e => setNovoPonto({...novoPonto, tipo: e.target.value})}
+                                className="border rounded p-1 text-sm outline-none focus:border-green-500"
+                            >
+                                <option>Entrada</option>
+                                <option>Ida Intervalo</option>
+                                <option>Volta Intervalo</option>
+                                <option>Saída</option>
+                            </select>
+                            <input 
+                                type="time" 
+                                value={novoPonto.hora} 
+                                onChange={e => setNovoPonto({...novoPonto, hora: e.target.value})}
+                                className="border rounded p-1 text-sm outline-none focus:border-green-500"
+                            />
+                            <div className="flex gap-1 ml-auto">
+                                <button onClick={salvarNovoPonto} className="bg-green-600 text-white p-1.5 rounded hover:bg-green-700 shadow"><Save size={16}/></button>
+                                <button onClick={() => setAdicionando(false)} className="bg-gray-200 text-gray-500 p-1.5 rounded hover:bg-red-100 hover:text-red-500"><X size={16}/></button>
+                            </div>
+                        </div>
+                    )}
+
                     {mensagem && (
-                        <div className="mb-4 bg-white border border-blue-200 p-3 rounded-lg shadow-sm">
-                            <p className="text-xs font-bold text-blue-800 flex items-center gap-2 mb-1">
-                                <MessageCircle size={14}/> Justificativa do Colaborador:
-                            </p>
-                            <p className="text-sm text-gray-700 italic">"{mensagem}"</p>
+                        <div className="mb-4 bg-white border border-blue-200 p-3 rounded-lg shadow-sm flex gap-3">
+                            <MessageCircle size={18} className="text-blue-500 mt-0.5"/>
+                            <div>
+                                <p className="text-xs font-bold text-blue-800 uppercase">Justificativa do Colaborador</p>
+                                <p className="text-sm text-gray-700 italic">"{mensagem}"</p>
+                            </div>
                         </div>
                     )}
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <p className="text-xs font-bold text-gray-400 uppercase mb-2">Registros do Dia</p>
-                            {dia.pontos.length > 0 ? dia.pontos.map((p, i) => (
-                                <div key={i} className="flex justify-between text-sm border-b border-gray-200 py-1 last:border-0">
-                                    <span className={`font-semibold ${p.tipo === 'Entrada' ? 'text-green-600' : p.tipo === 'Saída' ? 'text-red-600' : 'text-blue-600'}`}>
-                                        {p.tipo}
-                                    </span>
-                                    <span className="font-mono text-gray-600">
-                                        {new Date(p.data).toLocaleTimeString('pt-BR')}
-                                    </span>
-                                </div>
-                            )) : <p className="text-sm text-gray-400 italic">Sem registros neste dia.</p>}
-                        </div>
-                        
-                        <div className="text-center md:border-l border-gray-200 flex flex-col justify-center mt-4 md:mt-0">
-                            <p className="text-xs font-bold text-gray-400 uppercase">Saldo Total Calculado</p>
-                            <p className={`text-3xl font-bold ${saldoPositivo ? 'text-green-600' : 'text-red-600'}`}>
-                                {saldoStr}
-                            </p>
-                        </div>
+                    <div className="space-y-2">
+                        {dia.pontos.length > 0 ? dia.pontos.map((p) => (
+                            <div key={p.id} className="flex items-center justify-between text-sm bg-white p-2 px-3 rounded border border-gray-200 shadow-sm hover:shadow-md transition">
+                                
+                                {editandoId === p.id ? (
+                                    // === MODO EDIÇÃO (Inputs aparecem) ===
+                                    <div className="flex items-center gap-2 w-full animate-fade-in">
+                                        <select 
+                                            value={editValues.tipo} 
+                                            onChange={e => setEditValues({...editValues, tipo: e.target.value})}
+                                            className="border rounded p-1 text-xs font-bold"
+                                        >
+                                            <option>Entrada</option>
+                                            <option>Ida Intervalo</option>
+                                            <option>Volta Intervalo</option>
+                                            <option>Saída</option>
+                                        </select>
+                                        <input 
+                                            type="time" 
+                                            value={editValues.hora}
+                                            onChange={e => setEditValues({...editValues, hora: e.target.value})}
+                                            className="border rounded p-1 text-xs"
+                                        />
+                                        <div className="flex gap-1 ml-auto">
+                                            <button onClick={() => salvarEdicao(p.id, p.data)} className="bg-green-100 text-green-700 p-1 rounded hover:bg-green-200"><Save size={16}/></button>
+                                            <button onClick={() => setEditandoId(null)} className="bg-red-100 text-red-700 p-1 rounded hover:bg-red-200"><X size={16}/></button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    // === MODO VISUALIZAÇÃO ===
+                                    <>
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-2 h-2 rounded-full ${p.tipo === 'Entrada' ? 'bg-green-500' : p.tipo === 'Saída' ? 'bg-red-500' : 'bg-blue-500'}`}></div>
+                                            <span className={`font-bold w-24 ${p.tipo === 'Entrada' ? 'text-green-700' : p.tipo === 'Saída' ? 'text-red-700' : 'text-blue-700'}`}>
+                                                {p.tipo}
+                                            </span>
+                                            <span className="font-mono text-gray-700 font-bold text-base">
+                                                {new Date(p.data).toLocaleTimeString('pt-BR').slice(0,5)}
+                                            </span>
+                                            {/* Badge se for manual */}
+                                            {p.ip && p.ip.includes("Manual") && (
+                                                <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 rounded border border-yellow-200 font-bold hidden md:inline-block">MANUAL</span>
+                                            )}
+                                        </div>
+                                        <div className="flex gap-2 opacity-50 hover:opacity-100 transition">
+                                            <button 
+                                                onClick={() => iniciarEdicao(p)} 
+                                                className="text-blue-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded" 
+                                                title="Editar horário"
+                                            >
+                                                <Edit3 size={16}/>
+                                            </button>
+                                            <button 
+                                                onClick={() => handleExcluir(p.id)} 
+                                                className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded" 
+                                                title="Excluir registro"
+                                            >
+                                                <Trash2 size={16}/>
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )) : <p className="text-sm text-gray-400 italic py-2">Sem registros neste dia.</p>}
                     </div>
                 </div>
             )}
