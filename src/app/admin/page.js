@@ -29,10 +29,10 @@ import {
   ArrowLeft, 
   Mail, 
   Coffee,
-  FileSpreadsheet // Ícone para o botão do Excel
+  FileSpreadsheet // Ícone para o botão Excel
 } from "lucide-react";
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx'; // Biblioteca Obrigatória: npm install xlsx
+import * as XLSX from 'xlsx'; // Importação da biblioteca Excel
 
 export default function AdminPage() {
   // ==================================================================================
@@ -64,7 +64,7 @@ export default function AdminPage() {
   // Busca e Seleção de Usuário
   const [termoBusca, setTermoBusca] = useState("");
   const [usuarioSelecionado, setUsuarioSelecionado] = useState(null); // Se preenchido, mostra a ficha individual
-  const [relatorioDetalhado, setRelatorioDetalhado] = useState(null); // Folha de Ponto (Relatórios)
+  const [relatorioDetalhado, setRelatorioDetalhado] = useState(null); // Folha de Ponto Detalhada
 
   // Modais (Pop-ups)
   const [modalNovoUsuario, setModalNovoUsuario] = useState(false);
@@ -536,7 +536,6 @@ export default function AdminPage() {
       return todasMensagens.find(m => m.usuarioId == uid && m.dataIso === dataIso)?.texto;
   }
 
-  // Filtro de busca
   const usuariosFiltrados = usuarios.filter(u => 
     u.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
     (u.email && u.email.toLowerCase().includes(termoBusca.toLowerCase()))
@@ -653,7 +652,6 @@ export default function AdminPage() {
                 {/* 1. DASHBOARD */}
                 {view === 'dashboard' && !usuarioSelecionado && (
                     <div className="space-y-6 animate-fade-in print:hidden">
-                        {/* CARDS KPI */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <CardResumo 
                                 titulo="Colaboradores Ativos" 
@@ -740,21 +738,21 @@ export default function AdminPage() {
                                                             <button 
                                                                 onClick={() => setUsuarioSelecionado(user)} 
                                                                 className="bg-blue-100 text-[#1351b4] p-2 rounded hover:bg-blue-200 transition"
-                                                                title="Ver Espelho"
+                                                                title="Ver Espelho de Ponto"
                                                             >
                                                                 <Eye size={18} />
                                                             </button>
                                                             <button 
                                                                 onClick={() => abrirEdicao(user)} 
                                                                 className="bg-orange-100 text-orange-600 p-2 rounded hover:bg-orange-200 transition"
-                                                                title="Editar"
+                                                                title="Editar Dados"
                                                             >
                                                                 <Edit3 size={18} />
                                                             </button>
                                                             <button 
                                                                 onClick={() => handleExcluirUsuario(user)} 
                                                                 className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200 transition"
-                                                                title="Excluir"
+                                                                title="Excluir Colaborador"
                                                             >
                                                                 <Trash2 size={18} />
                                                             </button>
@@ -772,97 +770,102 @@ export default function AdminPage() {
 
                 {/* 2. RELATÓRIOS (LISTA) */}
                 {view === 'relatorios' && !usuarioSelecionado && !relatorioDetalhado && (
-                    <div className="space-y-6 animate-fade-in print:hidden">
-                        <div className="bg-white p-6 rounded shadow-sm border border-gray-200">
-                            <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                                <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg">
-                                    <FileText size={24} className="text-[#1351b4]"/> Relatório Mensal de Ponto
-                                </h3>
-                                <div className="flex gap-2">
-                                     <select value={mesRelatorio} onChange={e => setMesRelatorio(Number(e.target.value))} className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer">
-                                         {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((m,i) => <option key={i} value={i}>{m}</option>)}
-                                     </select>
-                                     <select value={anoRelatorio} onChange={e => setAnoRelatorio(Number(e.target.value))} className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer">
-                                         {Array.from({length: 5}, (_,i) => 2026 + i).map(a => <option key={a} value={a}>{a}</option>)}
-                                     </select>
-                                     
-                                     {/* BOTÃO EXPORTAR EXCEL */}
-                                     <button 
-                                        onClick={handleExportarExcel}
-                                        className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition shadow-sm"
-                                     >
-                                         <FileSpreadsheet size={16}/> Excel
-                                     </button>
+                    <div className="space-y-6 animate-fade-in">
+                        
+                        {/* CABEÇALHO DE IMPRESSÃO (Invisível na tela, visível no papel) */}
+                        <div className="hidden print:block text-center mb-6">
+                            <h1 className="text-2xl font-bold">Relatório Geral de Ponto</h1>
+                            <p className="text-sm">Período: {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mesRelatorio]} / {anoRelatorio}</p>
+                        </div>
 
-                                     {/* BOTÃO EXPORTAR PDF */}
-                                     <button 
-                                        onClick={() => window.print()}
-                                        className="bg-red-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-red-700 transition shadow-sm"
-                                     >
-                                         <Printer size={16}/> PDF
-                                     </button>
-                                </div>
+                        <div className="bg-white p-6 rounded shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center print:border-none print:shadow-none print:p-0">
+                            <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg print:hidden">
+                                <FileText size={24} className="text-[#1351b4]"/> Relatório Mensal de Ponto
+                            </h3>
+                            <div className="flex gap-2 print:hidden">
+                                 <select value={mesRelatorio} onChange={e => setMesRelatorio(Number(e.target.value))} className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer">
+                                     {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((m,i) => <option key={i} value={i}>{m}</option>)}
+                                 </select>
+                                 <select value={anoRelatorio} onChange={e => setAnoRelatorio(Number(e.target.value))} className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer">
+                                     {Array.from({length: 5}, (_,i) => 2026 + i).map(a => <option key={a} value={a}>{a}</option>)}
+                                 </select>
+                                 
+                                 {/* BOTÃO EXPORTAR EXCEL */}
+                                 <button 
+                                    onClick={handleExportarExcel}
+                                    className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition shadow-sm"
+                                 >
+                                     <FileSpreadsheet size={16}/> Excel
+                                 </button>
+
+                                 {/* BOTÃO EXPORTAR PDF (Imprime a Lista) */}
+                                 <button 
+                                    onClick={() => window.print()}
+                                    className="bg-red-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-red-700 transition shadow-sm"
+                                 >
+                                     <Printer size={16}/> PDF
+                                 </button>
                             </div>
+                        </div>
 
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left text-sm border-collapse">
-                                    <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-xs">
-                                        <tr>
-                                            <th className="p-3 border">Colaborador</th>
-                                            <th className="p-3 border text-center">Horas Trabalhadas</th>
-                                            <th className="p-3 border text-center">Saldo de Horas</th>
-                                            <th className="p-3 border text-center">Dias de Folga</th>
-                                            <th className="p-3 border text-center">Ação</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {dadosRelatorio.map(rel => (
-                                            <tr key={rel.id} className="hover:bg-gray-50 transition">
-                                                <td className="p-3 border font-bold text-[#071d41]">
-                                                    {rel.nome}<br/>
-                                                    <span className="text-[10px] text-gray-400 font-normal">{rel.email}</span>
-                                                </td>
-                                                <td className="p-3 border text-center font-mono text-gray-700 font-medium">{rel.totalHoras}</td>
-                                                <td className="p-3 border text-center font-bold">
-                                                    <span className={`px-2 py-1 rounded ${rel.saldoMinutos >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                                                        {formatarSaldo(rel.saldoMinutos)}
+                        <div className="bg-white rounded shadow-sm border overflow-hidden print:border print:shadow-none">
+                            <table className="w-full text-left text-sm print:text-xs border-collapse">
+                                <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-xs print:bg-gray-200">
+                                    <tr>
+                                        <th className="p-3 border">Colaborador</th>
+                                        <th className="p-3 border text-center">Horas Trabalhadas</th>
+                                        <th className="p-3 border text-center">Saldo de Horas</th>
+                                        <th className="p-3 border text-center">Dias de Folga</th>
+                                        <th className="p-3 border text-center print:hidden">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {dadosRelatorio.map(rel => (
+                                        <tr key={rel.id} className="hover:bg-gray-50 transition print:break-inside-avoid">
+                                            <td className="p-3 border font-bold text-[#071d41]">
+                                                {rel.nome}<br/>
+                                                <span className="text-[10px] text-gray-400 font-normal">{rel.email}</span>
+                                            </td>
+                                            <td className="p-3 border text-center font-mono text-gray-700 font-medium">{rel.totalHoras}</td>
+                                            <td className="p-3 border text-center font-bold">
+                                                <span className={`px-2 py-1 rounded ${rel.saldoMinutos >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                                                    {formatarSaldo(rel.saldoMinutos)}
+                                                </span>
+                                            </td>
+                                            <td className="p-3 border text-center">
+                                                {rel.diasFolga > 0 ? (
+                                                    <span className="bg-blue-100 text-blue-700 px-2 rounded text-xs font-bold border border-blue-200 print:border-black">
+                                                        {rel.diasFolga} Dias Folga
                                                     </span>
-                                                </td>
-                                                <td className="p-3 border text-center">
-                                                    {rel.diasFolga > 0 ? (
-                                                        <span className="bg-blue-100 text-blue-700 px-2 rounded text-xs font-bold">
-                                                            {rel.diasFolga} Dias Folga
-                                                        </span>
-                                                    ) : (
-                                                        rel.faltas.length > 0 ? (
-                                                            <div className="flex flex-wrap gap-1 justify-center">
-                                                                {rel.faltas.slice(0, 5).map((f, i) => (
-                                                                    <span key={i} className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-200">
-                                                                        {f}
-                                                                    </span>
-                                                                ))}
-                                                                {rel.faltas.length > 5 && <span className="text-xs text-gray-500">+{rel.faltas.length - 5}</span>}
-                                                            </div>
-                                                        ) : <span className="text-green-500 font-bold text-xs flex items-center justify-center gap-1"><CheckCircle size={12}/> 100% Presente</span>
-                                                    )}
-                                                </td>
-                                                <td className="p-3 border text-center">
-                                                    <button onClick={() => setRelatorioDetalhado(rel)} className="bg-[#1351b4] text-white px-3 py-1 rounded text-xs hover:bg-blue-800 flex items-center gap-1 mx-auto transition shadow-sm">
-                                                        <FileText size={14}/> Abrir Folha
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {dadosRelatorio.length === 0 && (
-                                            <tr><td colSpan="5" className="p-10 text-center text-gray-400">Nenhum dado encontrado para o período selecionado.</td></tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div className="mt-4 p-4 bg-blue-50 rounded border border-blue-100 text-xs text-blue-800 flex items-start gap-2">
-                                <AlertCircle size={16} className="mt-0.5"/>
-                                <p><strong>Nota do Sistema:</strong> Dias marcados como Folga não descontam horas do saldo. Dias sem ponto e sem folga descontam 8 horas.</p>
-                            </div>
+                                                ) : (
+                                                    rel.faltas.length > 0 ? (
+                                                        <div className="flex flex-wrap gap-1 justify-center">
+                                                            {rel.faltas.slice(0, 5).map((f, i) => (
+                                                                <span key={i} className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-200">
+                                                                    {f}
+                                                                </span>
+                                                            ))}
+                                                            {rel.faltas.length > 5 && <span className="text-xs text-gray-500">+{rel.faltas.length - 5}</span>}
+                                                        </div>
+                                                    ) : <span className="text-green-500 font-bold text-xs flex items-center justify-center gap-1"><CheckCircle size={12}/> 100% Presente</span>
+                                                )}
+                                            </td>
+                                            <td className="p-3 border text-center print:hidden">
+                                                <button onClick={() => setRelatorioDetalhado(rel)} className="bg-[#1351b4] text-white px-3 py-1 rounded text-xs hover:bg-blue-800 flex items-center gap-1 mx-auto transition shadow-sm">
+                                                    <FileText size={14}/> Abrir Folha
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {dadosRelatorio.length === 0 && (
+                                        <tr><td colSpan="5" className="p-10 text-center text-gray-400">Nenhum dado encontrado para o período selecionado.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="mt-4 p-4 bg-blue-50 rounded border border-blue-100 text-xs text-blue-800 flex items-start gap-2 print:hidden">
+                            <AlertCircle size={16} className="mt-0.5"/>
+                            <p><strong>Nota do Sistema:</strong> Dias marcados como Folga não descontam horas do saldo. Dias sem ponto e sem folga descontam 8 horas.</p>
                         </div>
                     </div>
                 )}
@@ -932,16 +935,18 @@ export default function AdminPage() {
                             </div>
                         </div>
 
-                        {/* Botões de Controle */}
+                        {/* Botões de Controle (Somem na impressão) */}
                         <div className="mt-8 flex flex-col md:flex-row justify-center gap-4 print:hidden">
                             <button onClick={() => setRelatorioDetalhado(null)} className="px-6 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center justify-center gap-2 transition">
                                 <ArrowLeft size={18}/> Voltar
                             </button>
                             
+                            {/* BOTÃO DE ENVIAR EMAIL */}
                             <button onClick={() => handleEnviarEmailRelatorio(relatorioDetalhado)} className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg transition">
                                 <Mail size={18}/> Enviar por E-mail
                             </button>
 
+                            {/* BOTÃO DE IMPRIMIR */}
                             <button onClick={() => window.print()} className="px-6 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg transition">
                                 <Printer size={18}/> Imprimir Folha
                             </button>
@@ -977,6 +982,7 @@ export default function AdminPage() {
                                     <div className="text-gray-500 text-sm flex gap-2">
                                         <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">{usuarioSelecionado.cargo}</span>
                                     </div>
+                                    {/* CPF REMOVIDO, APENAS EMAIL */}
                                     <p className="text-gray-400 text-xs mt-1">{usuarioSelecionado.email || "Sem e-mail cadastrado"}</p>
                                 </div>
                             </div>
@@ -1009,6 +1015,7 @@ export default function AdminPage() {
                                         pontosReais={pontosGerais.filter(p => p.usuarioId === usuarioSelecionado.id && new Date(p.data).toLocaleDateString('pt-BR') === dia.dataFormatada)}
                                         mensagem={getMensagemDia(dia.dataIso)} 
                                         usuarioId={usuarioSelecionado.id} 
+                                        // Passa o status de folga para o componente visual
                                         isFolga={folgasGerais.some(f => f.usuarioId === usuarioSelecionado.id && f.dataIso === dia.dataIso)}
                                         onUpdate={carregarDados}
                                     />
@@ -1053,7 +1060,7 @@ export default function AdminPage() {
           </div>
       )}
 
-      {/* MODAL NOVO USUÁRIO */}
+      {/* MODAL NOVO USUÁRIO (SEM CPF) */}
       {modalNovoUsuario && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
               <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in">
@@ -1066,6 +1073,7 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input placeholder="Ex: João Silva" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.nome} onChange={e => setNovoUser({...novoUser, nome: e.target.value})} />
                       </div>
+                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail (Login)</label>
                           <input placeholder="email@exemplo.com" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.email} onChange={e => setNovoUser({...novoUser, email: e.target.value})} />
@@ -1086,7 +1094,7 @@ export default function AdminPage() {
           </div>
       )}
 
-      {/* MODAL EDITAR USUÁRIO */}
+      {/* MODAL EDITAR USUÁRIO (SEM CPF) */}
       {modalEditarUsuario && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
               <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm border-t-4 border-orange-500">
@@ -1099,6 +1107,7 @@ export default function AdminPage() {
                           <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.nome} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, nome: e.target.value})} />
                       </div>
+                      {/* CAMPO CPF REMOVIDO */}
                       <div>
                           <label className="text-xs font-bold text-gray-500 uppercase">E-mail</label>
                           <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.email} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, email: e.target.value})} />
@@ -1124,6 +1133,7 @@ export default function AdminPage() {
 // FUNÇÕES AUXILIARES E COMPONENTES
 // ==========================================================
 
+// Helper Específico para a Folha de Ponto Impressa (Lógica Completa)
 function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
     const dias = [];
     const ultimoDia = new Date(ano, mes + 1, 0).getDate();
@@ -1150,7 +1160,7 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
 
         if (isFolga) {
             status = "FOLGA";
-            saldo = "00:00"; 
+            saldo = "00:00"; // Saldo zerado na folga
             saldoPositivo = true;
         } else if (entrada) {
             entradaStr = new Date(entrada.data).toLocaleTimeString('pt-BR').slice(0,5);
@@ -1182,7 +1192,8 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
                 }
 
             } else {
-                saldo = "-08:00"; saldoPositivo = false;
+                saldo = "-08:00"; // Falta saída
+                saldoPositivo = false;
             }
         } else {
             // Verificar se o dia já passou
@@ -1212,9 +1223,11 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
     return dias;
 }
 
+// --- COMPONENTE DE LINHA DO DIA (AGORA COM PODERES DE EDIÇÃO) ---
 function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate }) {
     const [aberto, setAberto] = useState(false);
     
+    // Estados para Edição/Criação
     const [editandoId, setEditandoId] = useState(null);
     const [editValues, setEditValues] = useState({ hora: "", tipo: "" });
     const [adicionando, setAdicionando] = useState(false);
@@ -1225,6 +1238,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
     let saldoPositivo = true;
     let statusDia = "AUSÊNCIA";
     
+    // Se for marcado como folga
     if (isFolga) {
         statusDia = "FOLGA";
     } else {
@@ -1267,17 +1281,19 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
 
     // --- AÇÕES DO ADMIN ---
 
+    // 1. Excluir Ponto
     async function handleExcluir(id) {
         if (!confirm("Tem certeza que deseja apagar este registro?")) return;
         try {
             const res = await fetch(`/api/ponto?id=${id}`, { method: 'DELETE' });
             if (res.ok) {
                 toast.success("Registro apagado.");
-                onUpdate(); 
+                onUpdate(); // Atualiza a tela
             }
         } catch (e) { toast.error("Erro ao excluir."); }
     }
 
+    // 2. Iniciar Edição (Abre os inputs na linha)
     function iniciarEdicao(ponto) {
         const dataObj = new Date(ponto.data);
         const horaFormatada = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -1285,6 +1301,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         setEditandoId(ponto.id);
     }
 
+    // 3. Salvar Edição
     async function salvarEdicao(idOriginal, dataOriginal) {
         try {
             const dataBase = new Date(dataOriginal);
@@ -1308,8 +1325,10 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         } catch (e) { toast.error("Erro ao salvar."); }
     }
 
+    // 4. Salvar Novo Ponto Manual (Essa é a mágica do Admin)
     async function salvarNovoPonto() {
         try {
+            // Pega a data do dia que estamos vendo (YYYY-MM-DD)
             const [ano, mes, diaMes] = dia.dataIso.split('-');
             const dataFinal = new Date(ano, mes - 1, diaMes);
             const [h, m] = novoPonto.hora.split(':');
@@ -1318,7 +1337,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
             const res = await fetch('/api/ponto', {
                 method: 'POST',
                 body: JSON.stringify({
-                    modoAdmin: true, 
+                    modoAdmin: true, // <--- O SEGREDO: Essa flag libera sem GPS
                     usuarioId: usuarioId,
                     tipo: novoPonto.tipo,
                     dataManual: dataFinal.toISOString()
@@ -1333,13 +1352,14 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         } catch (e) { toast.error("Erro ao criar ponto."); }
     }
 
+    // 5. Alternar Folga
     async function toggleFolga() {
         try {
             await fetch('/api/folgas', {
                 method: 'POST',
                 body: JSON.stringify({ usuarioId, dataIso: dia.dataIso })
             });
-            onUpdate(); 
+            onUpdate(); // Atualiza para recalcular
             toast.success(isFolga ? "Folga removida!" : "Folga definida!");
         } catch(e) { toast.error("Erro ao definir folga."); }
     }
@@ -1353,6 +1373,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                 <div className="flex flex-col flex-1">
                     <span className="font-bold text-sm text-[#071d41]">{dia.dataFormatada}</span>
                     
+                    {/* VISUAL STATUS DO DIA */}
                     <div className="flex gap-2 mt-1">
                         <span className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase 
                             ${statusDia === 'PRESENÇA' ? 'bg-green-100 text-green-700 border-green-200' : 
@@ -1361,6 +1382,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                             {statusDia}
                         </span>
                         
+                        {/* Mostra saldo se não for folga ou se tiver ponto mesmo na folga */}
                         {statusDia !== 'FOLGA' && (
                             <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${saldoPositivo ? 'bg-green-50 text-green-600 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
                                 Saldo: {saldoStr}
@@ -1370,6 +1392,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                 </div>
                 
                 <div className="flex items-center gap-3">
+                    {/* BALÃO DE MENSAGEM */}
                     {mensagem && (
                          <div className="bg-blue-100 text-blue-600 p-1.5 rounded-full" title="Possui Justificativa">
                              <MessageCircle size={14} />
@@ -1384,6 +1407,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
             {aberto && (
                 <div className="bg-gray-50 p-4 pl-4 md:pl-8 animate-fade-in border-t border-gray-100 shadow-inner text-sm">
                     
+                    {/* BARRA DE AÇÕES DO DIA */}
                     <div className="flex flex-wrap gap-2 mb-4">
                         <button 
                             onClick={() => setAdicionando(!adicionando)} 
@@ -1392,6 +1416,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                             <PlusCircle size={14}/> {adicionando ? 'Cancelar Adição' : 'Adicionar Ponto'}
                         </button>
                         
+                        {/* BOTÃO DE FOLGA INTELIGENTE */}
                         <button 
                             onClick={(e) => { e.stopPropagation(); toggleFolga(); }}
                             className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition 
@@ -1401,6 +1426,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                         </button>
                     </div>
 
+                    {/* FORMULÁRIO DE NOVO PONTO */}
                     {adicionando && (
                         <div className="bg-white border-l-4 border-green-500 p-3 rounded shadow-sm mb-4 flex flex-wrap items-center gap-2 animate-scale-in">
                             <span className="text-xs font-bold text-green-700 uppercase mr-2">Novo:</span>
@@ -1437,10 +1463,12 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                     )}
                     
                     <div className="space-y-2">
+                        {/* AQUI USAMOS pontosReais PARA LISTAR OS PONTOS EXATOS DO DIA */}
                         {pontosReais && pontosReais.length > 0 ? pontosReais.map((p) => (
                             <div key={p.id} className="flex items-center justify-between text-sm bg-white p-2 px-3 rounded border border-gray-200 shadow-sm hover:shadow-md transition">
                                 
                                 {editandoId === p.id ? (
+                                    // === MODO EDIÇÃO (Inputs aparecem) ===
                                     <div className="flex items-center gap-2 w-full animate-fade-in">
                                         <select 
                                             value={editValues.tipo} 
@@ -1464,6 +1492,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                                         </div>
                                     </div>
                                 ) : (
+                                    // === MODO VISUALIZAÇÃO ===
                                     <>
                                         <div className="flex items-center gap-3">
                                             <div className={`w-2 h-2 rounded-full ${p.tipo === 'Entrada' ? 'bg-green-500' : p.tipo === 'Saída' ? 'bg-red-500' : 'bg-blue-500'}`}></div>
@@ -1473,6 +1502,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                                             <span className="font-mono text-gray-700 font-bold text-base">
                                                 {new Date(p.data).toLocaleTimeString('pt-BR').slice(0,5)}
                                             </span>
+                                            {/* Badge se for manual */}
                                             {p.ip && p.ip.includes("Manual") && (
                                                 <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 rounded border border-yellow-200 font-bold hidden md:inline-block">MANUAL</span>
                                             )}
@@ -1496,7 +1526,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                                     </>
                                 )}
                             </div>
-                        )) : <p className="text-sm text-gray-400 italic py-2">Sem registros de ponto.</p>}
+                        )) : <p className="text-sm text-gray-400 italic py-2">Sem registros neste dia.</p>}
                     </div>
                 </div>
             )}
@@ -1569,13 +1599,17 @@ function gerarDiasDoMesSelecionado(mes, ano, pontos) {
         const d = new Date(ano, mes, i);
         const dataStr = d.toLocaleDateString('pt-BR');
         const dataIso = d.toISOString().split('T')[0];
+        // Note: pontos aqui é o array filtrado já para o usuário, mas precisamos filtrar por dia também
+        // A filtragem real acontece dentro do map no componente pai ou aqui.
+        // Como o ItemDiaAdmin espera 'dia.pontos' (que não estamos usando mais lá dentro, pois passamos pontosReais), 
+        // vamos manter a estrutura básica de data.
         
         dias.push({ 
             dataIso, 
             dataFormatada: dataStr, 
             diaSemana: d.toLocaleDateString('pt-BR', {weekday: 'long'}), 
-            pontos: [] // Placeholder
+            pontos: [] // Placeholder, o ItemDiaAdmin recebe pontosReais agora para ser mais preciso
         });
     }
-    return dias.reverse(); 
+    return dias.reverse(); // Mostra do dia 31 pro dia 1
 }
