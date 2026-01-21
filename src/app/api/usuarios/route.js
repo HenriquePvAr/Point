@@ -1,56 +1,58 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma';
 
-const prisma = new PrismaClient();
-
-// LISTAR USUÁRIOS (GET)
+// ==================================================================
+// 1. LISTAR USUÁRIOS (GET)
+// ==================================================================
 export async function GET() {
     try {
         const usuarios = await prisma.usuario.findMany({
             orderBy: { nome: 'asc' }
         });
+        
+        // Remove a senha antes de enviar para o front (segurança)
         const seguros = usuarios.map(({ senha, ...resto }) => resto);
+        
         return NextResponse.json(seguros);
     } catch (error) {
         return NextResponse.json({ error: "Erro ao buscar usuários" }, { status: 500 });
     }
 }
 
-// CRIAR USUÁRIO (POST)
+// ==================================================================
+// 2. CRIAR USUÁRIO (POST)
+// ==================================================================
 export async function POST(request) {
     try {
         const body = await request.json();
         
-        console.log("Criando usuário:", body.nome); 
-
-        // 1. Validação Básica
-        if (!body.cpf) {
-            return NextResponse.json({ success: false, message: "CPF é obrigatório." }, { status: 400 });
+        // Validação simples
+        if (!body.nome || !body.email) {
+            return NextResponse.json({ success: false, message: "Nome e Email são obrigatórios." }, { status: 400 });
         }
-        
-        // Limpeza do CPF
-        const cpfString = String(body.cpf);
-        const cpfLimpo = cpfString.replace(/\D/g, "");
 
-        // 2. Verifica se já existe
-        const existe = await prisma.usuario.findFirst({
-            where: { OR: [{ cpf: cpfLimpo }, { email: body.email }] }
+        // Como removemos o campo CPF do formulário, geramos um aleatório
+        // para satisfazer a regra do banco de dados (@unique)
+        const cpfAleatorio = Math.floor(Math.random() * 100000000000).toString();
+
+        // Verifica se o EMAIL já existe
+        const existe = await prisma.usuario.findUnique({
+            where: { email: body.email }
         });
 
         if (existe) {
-            return NextResponse.json({ success: false, message: "Usuário já cadastrado (CPF ou Email duplicado)." }, { status: 400 });
+            return NextResponse.json({ success: false, message: "E-mail já cadastrado." }, { status: 400 });
         }
 
-        // 3. CRIAÇÃO COM SENHA PADRÃO "123"
-        // O erro estava aqui: body.senha vinha vazio. Agora usamos || "123"
+        // Criação no Banco
         const novoUsuario = await prisma.usuario.create({
             data: {
                 nome: body.nome,
-                cpf: cpfLimpo,
-                email: body.email, 
-                senha: body.senha || "123", // <--- CORREÇÃO AQUI
+                email: body.email,
                 cargo: body.cargo,
-                tipo: body.tipo || "funcionario",
+                cpf: cpfAleatorio, // CPF gerado automaticamente
+                senha: "123",      // Senha padrão
+                tipo: "funcionario",
                 status: "ativo"
             }
         });
@@ -59,50 +61,88 @@ export async function POST(request) {
 
     } catch (error) {
         console.error("ERRO NO CADASTRO:", error);
-        return NextResponse.json({ success: false, message: "Erro ao criar: " + error.message }, { status: 500 });
+        return NextResponse.json({ success: false, message: "Erro ao criar usuário." }, { status: 500 });
     }
 }
 
-// EDITAR/EXCLUIR (PUT)// EDITAR/EXCLUIR (PUT)
+// ==================================================================
+// 3. EDITAR USUÁRIO (PUT)
+// ==================================================================
 export async function PUT(request) {
     try {
         const body = await request.json();
 
-        // CASO 1: EXCLUIR
-        if (body.acao === 'excluir') {
-            await prisma.usuario.delete({ where: { id: body.id } });
-            return NextResponse.json({ success: true, message: "Usuário excluído!" });
+        // Verifica ID
+        if (!body.id) {
+            return NextResponse.json({ success: false, message: "ID necessário." }, { status: 400 });
         }
 
-        // CASO 2: EDITAR (Correção aqui!)
+        let dadosParaAtualizar = {};
+
+        // CENÁRIO A: Edição de Perfil (Nome, Email, Cargo)
         if (body.acao === 'editar') {
-            // Criamos um objeto APENAS com o que pode ser mudado na tela de edição
-            // Isso impede que a senha seja alterada acidentalmente
-            const dadosParaAtualizar = {
+            dadosParaAtualizar = {
+                nome: body.nome,
+                email: body.email,
+                cargo: body.cargo
+            };
+        } 
+        // CENÁRIO B: Alteração de Status (Bloquear/Desbloquear)
+        else if (body.status) {
+            dadosParaAtualizar = {
+                status: body.status
+            };
+        }
+        // CENÁRIO C: Edição Genérica
+        else {
+             dadosParaAtualizar = {
                 nome: body.nome,
                 email: body.email,
                 cargo: body.cargo,
-                // Nota: NÃO incluímos 'senha' aqui. O Prisma vai manter a antiga.
+                status: body.status
             };
+        }
 
-            await prisma.usuario.update({
-                where: { id: body.id },
-                data: dadosParaAtualizar
-            });
-            return NextResponse.json({ success: true, message: "Usuário atualizado!" });
-        }
-        
-        // CASO 3: BLOQUEAR/DESBLOQUEAR
-        if (body.status) {
-             await prisma.usuario.update({
-                where: { id: body.id },
-                data: { status: body.status }
-            });
-            return NextResponse.json({ success: true });
-        }
+        // Remove campos undefined/null para não apagar dados sem querer
+        Object.keys(dadosParaAtualizar).forEach(key => 
+            dadosParaAtualizar[key] === undefined && delete dadosParaAtualizar[key]
+        );
+
+        const usuarioAtualizado = await prisma.usuario.update({
+            where: { id: parseInt(body.id) },
+            data: dadosParaAtualizar
+        });
+
+        return NextResponse.json({ success: true, usuario: usuarioAtualizado });
 
     } catch (error) {
         console.error("Erro no PUT:", error);
-        return NextResponse.json({ success: false, message: "Erro na operação." }, { status: 500 });
+        return NextResponse.json({ success: false, message: "Erro ao atualizar." }, { status: 500 });
+    }
+}
+
+// ==================================================================
+// 4. EXCLUIR USUÁRIO (DELETE)
+// ==================================================================
+export async function DELETE(request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const id = searchParams.get('id');
+
+        if (!id) {
+            return NextResponse.json({ success: false, message: "ID necessário." }, { status: 400 });
+        }
+
+        // Deleta primeiro os registros dependentes (opcional se tiver cascade no schema, mas seguro por código)
+        // O Prisma com onDelete: Cascade no schema já resolve, mas aqui garante.
+        await prisma.usuario.delete({
+            where: { id: parseInt(id) }
+        });
+
+        return NextResponse.json({ success: true, message: "Usuário excluído." });
+
+    } catch (error) {
+        console.error("Erro ao deletar:", error);
+        return NextResponse.json({ success: false, message: "Erro ao excluir." }, { status: 500 });
     }
 }

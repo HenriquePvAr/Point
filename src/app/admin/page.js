@@ -27,7 +27,7 @@ import {
   Printer,
   ArrowLeft,
   Mail,
-  Coffee // Ícone para Folga
+  Coffee 
 } from "lucide-react";
 import { toast } from 'sonner';
 
@@ -40,7 +40,7 @@ export default function AdminPage() {
   const [view, setView] = useState("dashboard"); // Opções: 'dashboard', 'relatorios'
   const [loading, setLoading] = useState(true);
 
-  // Dados do Admin Logado (Agora carregado do Banco)
+  // Dados do Admin Logado (Carregado do Banco)
   const [adminUser, setAdminUser] = useState({
       id: null,
       nome: "Carregando...",
@@ -109,7 +109,7 @@ export default function AdminPage() {
         if (adminEncontrado) {
             setAdminUser(adminEncontrado);
         } else {
-            // Fallback caso não ache (apenas visual)
+            // Fallback visual caso não ache
             setAdminUser({ nome: "Admin Master", email: "admin@sistema.com", cargo: "Gestor", id: null });
         }
 
@@ -262,7 +262,8 @@ export default function AdminPage() {
                   id: adminUser.id,
                   nome: adminParaEditar.nome,
                   email: adminParaEditar.email,
-                  cargo: adminParaEditar.cargo
+                  cargo: adminParaEditar.cargo,
+                  acao: 'editar' // Importante para o backend saber que é edição de perfil
               })
           });
 
@@ -386,7 +387,10 @@ export default function AdminPage() {
   // --- Salvar Edição ---
   async function handleSalvarEdicao() {
       try {
-          const res = await fetch('/api/usuarios', { method: 'PUT', body: JSON.stringify(usuarioParaEditar) });
+          const res = await fetch('/api/usuarios', { 
+              method: 'PUT', 
+              body: JSON.stringify({ ...usuarioParaEditar, acao: 'editar' }) 
+          });
           const data = await res.json();
           if (data.success) {
               toast.success("Dados do colaborador atualizados!");
@@ -717,7 +721,7 @@ export default function AdminPage() {
                                             <th className="p-3 border">Colaborador</th>
                                             <th className="p-3 border text-center">Horas Trabalhadas</th>
                                             <th className="p-3 border text-center">Saldo de Horas</th>
-                                            <th className="p-3 border text-center">Dias de Folga</th>
+                                            <th className="p-3 border text-center">Dias com Falta</th>
                                             <th className="p-3 border text-center">Ação</th>
                                         </tr>
                                     </thead>
@@ -736,9 +740,22 @@ export default function AdminPage() {
                                                     </span>
                                                 </td>
                                                 <td className="p-3 border text-center">
-                                                    <span className="bg-blue-100 text-blue-700 px-2 rounded text-xs font-bold">
-                                                        {rel.diasFolga} Dias Folga
-                                                    </span>
+                                                    {rel.diasFolga > 0 ? (
+                                                        <span className="bg-blue-100 text-blue-700 px-2 rounded text-xs font-bold">
+                                                            {rel.diasFolga} Dias Folga
+                                                        </span>
+                                                    ) : (
+                                                        rel.faltas.length > 0 ? (
+                                                            <div className="flex flex-wrap gap-1 justify-center">
+                                                                {rel.faltas.slice(0, 5).map((f, i) => (
+                                                                    <span key={i} className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-200">
+                                                                        {f}
+                                                                    </span>
+                                                                ))}
+                                                                {rel.faltas.length > 5 && <span className="text-xs text-gray-500">+{rel.faltas.length - 5}</span>}
+                                                            </div>
+                                                        ) : <span className="text-green-500 font-bold text-xs flex items-center justify-center gap-1"><CheckCircle size={12}/> 100% Presente</span>
+                                                    )}
                                                 </td>
                                                 <td className="p-3 border text-center">
                                                     {/* BOTÃO PARA ABRIR A FOLHA DETALHADA */}
