@@ -175,19 +175,42 @@ export async function POST(request) {
     }
 }
 
-// 2. LISTAR PONTOS (GET)
-// Mantido igual ao original
+// 2. LISTAR PONTOS (GET) - ATUALIZADO COM FILTRO DE MÊS/ANO
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const mes = searchParams.get('mes'); // parâmetro opcional
+    const ano = searchParams.get('ano'); // parâmetro opcional
 
     try {
         if (!userId) return NextResponse.json([]);
 
+        // Configura o filtro de data (se mes e ano forem passados)
+        let filtroData = {};
+        
+        // Verifica se mes e ano foram fornecidos e não são nulos/undefined
+        if (mes !== null && ano !== null) {
+            // Cria data inicial: dia 1 do mês selecionado
+            // Nota: No JS o mês começa em 0 (Jan=0), verifique se o front manda 0 ou 1.
+            // Assumindo que o front manda 0 para Janeiro (padrão JS), usamos parseInt(mes).
+            const dataInicio = new Date(parseInt(ano), parseInt(mes), 1);
+            
+            // Cria data final: último dia do mês às 23:59:59
+            // O dia 0 do mês seguinte retorna o último dia do mês atual
+            const dataFim = new Date(parseInt(ano), parseInt(mes) + 1, 0, 23, 59, 59);
+            
+            filtroData = {
+                gte: dataInicio,
+                lte: dataFim
+            };
+        }
+
         // Busca histórico do usuário
         const historico = await prisma.ponto.findMany({
             where: {
-                usuarioId: parseInt(userId)
+                usuarioId: parseInt(userId),
+                // Se houver filtro configurado, adiciona ao where. Se não, traz tudo.
+                ...(mes !== null && ano !== null ? { data: filtroData } : {})
             },
             orderBy: {
                 data: 'desc'
@@ -202,7 +225,7 @@ export async function GET(request) {
     }
 }
 
-// 3. ATUALIZAR PONTO (PUT) - NOVO
+// 3. ATUALIZAR PONTO (PUT)
 // Usado pelo botão de Lápis do Admin para corrigir horários ou tipos
 export async function PUT(request) {
     try {
@@ -225,7 +248,7 @@ export async function PUT(request) {
     }
 }
 
-// 4. EXCLUIR PONTO (DELETE) - NOVO
+// 4. EXCLUIR PONTO (DELETE)
 // Usado pelo botão de Lixeira do Admin para remover duplicados ou erros
 export async function DELETE(request) {
     const { searchParams } = new URL(request.url);

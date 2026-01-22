@@ -129,8 +129,8 @@ export default function AdminPage() {
   // ==================================================================================
 
   useEffect(() => {
-    carregarDados();
-  }, []);
+  carregarDados();
+}, [mesRelatorio, anoRelatorio]); // Adiciona estas variáveis aqui
 
   async function carregarDados() {
     try {
@@ -164,8 +164,8 @@ export default function AdminPage() {
       // 2. Buscar pontos e folgas de todos os usuários
       for (let user of dataUsers) {
         try {
-          // Pontos
-          const resPonto = await fetch(`/api/ponto?userId=${user.id}`);
+          // Pontos - AGORA COM FILTRO DE DATA
+const resPonto = await fetch(`/api/ponto?userId=${user.id}&mes=${mesRelatorio}&ano=${anoRelatorio}`);
           const dataPonto = await resPonto.json();
           todosPontos = [...todosPontos, ...dataPonto];
 

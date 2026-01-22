@@ -4,19 +4,19 @@ import { Toaster } from 'sonner';
 
 const inter = Inter({ subsets: ["latin"] });
 
-// 1. Configurações de Título e Descrição
+// 1. Configurações de SEO (Título da aba e descrição)
 export const metadata = {
   title: "Pinguim Manoa - Point",
   description: "Sistema de Gestão de Ponto",
 };
 
-// 2. CORREÇÃO DO ZOOM (Faltava isso aqui)
-// Essa configuração avisa o celular para usar o tamanho certo da tela
+// 2. CORREÇÃO DO ZOOM NO CELULAR (Viewport)
+// Sem isso, o celular renderiza o site como se fosse um desktop pequeno.
 export const viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  userScalable: false, // Impede que o usuário dê zoom (comum em apps)
+  userScalable: false, // Impede o zoom com pinça (opcional, dá sensação de App)
 };
 
 export default function RootLayout({ children }) {

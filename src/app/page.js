@@ -60,6 +60,9 @@ export default function Page() {
   const [tempoTrabalhado, setTempoTrabalhado] = useState("00:00:00");
   const [ultimoRegistroHoje, setUltimoRegistroHoje] = useState(null);
 
+  // MENU MOBILE
+  const [menuMobileAberto, setMenuMobileAberto] = useState(false);
+
   // ==========================================================
   // 3. EFEITOS (TURNO INTELIGENTE + CRONÔMETRO)
   // ==========================================================
@@ -69,8 +72,6 @@ export default function Page() {
       setHoraAtual(agora);
       
       // === LÓGICA DE TURNO INTELIGENTE (RESET ÀS 03:00 DA MANHÃ) ===
-      // Se for antes das 03:00, consideramos que ainda faz parte do turno do dia anterior.
-      
       const inicioJanela = new Date(agora);
       
       // Se for 00:00, 01:00 ou 02:00, volta um dia
@@ -108,24 +109,19 @@ export default function Page() {
       if (primeiraEntrada) {
         const horaEntrada = new Date(primeiraEntrada.data);
         if (ultimaSaida) {
-            // Se já encerrou o dia
-            // CORREÇÃO DE MADRUGADA TAMBÉM NO RELÓGIO AO VIVO
             let dtSaidaReal = new Date(ultimaSaida.data);
             if (dtSaidaReal < horaEntrada) {
                 dtSaidaReal.setDate(dtSaidaReal.getDate() + 1);
             }
             msTrabalhados = dtSaidaReal - horaEntrada;
         } else {
-            // Se ainda está trabalhando
             let agoraReal = new Date(agora);
-            // Se entrou ontem e hoje já é outro dia (mas antes das 03h)
             if (agoraReal < horaEntrada) {
                  agoraReal.setDate(agoraReal.getDate() + 1);
             }
             msTrabalhados = agoraReal - horaEntrada;
         }
         
-        // Formata HH:MM:SS
         const totalSeg = Math.floor(msTrabalhados / 1000);
         const h = Math.floor(totalSeg / 3600);
         const m = Math.floor((totalSeg % 3600) / 60);
@@ -244,19 +240,15 @@ export default function Page() {
   async function confirmarRegistro() {
     if (!tipoSelecionado) return;
 
-    // 1. Verifica suporte GPS
     if (!("geolocation" in navigator)) {
         return toast.error("Seu dispositivo não suporta Geolocalização.");
     }
 
     setStatus({ tipo: "loading", texto: "Obtendo localização..." });
 
-    // 2. Pede permissão e pega as coordenadas
     navigator.geolocation.getCurrentPosition(
         async (position) => {
             const { latitude, longitude } = position.coords;
-
-            // 3. Envia para o servidor validar
             setStatus({ tipo: "loading", texto: "Registrando..." });
             try {
                 const res = await fetch("/api/ponto", {
@@ -281,7 +273,6 @@ export default function Page() {
             } catch (e) { 
                 toast.error("Erro de conexão."); 
             }
-            // Delay para liberar botão
             setTimeout(() => setStatus(null), 1000);
         },
         (error) => {
@@ -295,7 +286,6 @@ export default function Page() {
     );
   }
 
-  // CARREGAR TUDO
   async function carregarDadosUsuario(id) {
     try {
         const resPonto = await fetch(`/api/ponto?userId=${id}`);
@@ -318,7 +308,6 @@ export default function Page() {
     }
   }
 
-  // SALVAR JUSTIFICATIVA
   async function salvarMensagem(dataIso, texto) {
     try {
         const res = await fetch('/api/mensagens', {
@@ -336,7 +325,6 @@ export default function Page() {
     } catch (e) { toast.error("Erro de conexão."); }
   }
 
-  // Regras para habilitar botões (BASEADO NO TURNO)
   function verificarPermissao(tipoBotao) {
       if (ultimoRegistroHoje === 'Saída') return false; 
       if (tipoBotao === 'Entrada') return ultimoRegistroHoje === null;
@@ -346,7 +334,6 @@ export default function Page() {
       return false;
   }
 
-  // Tema de Cores
   const cores = temaEscuro ? {
     bg: "bg-[#121212]", header: "bg-[#000000]", card: "bg-[#1e1e1e]", text: "text-gray-100", textSec: "text-gray-400", border: "border-gray-700", subHeader: "bg-[#333]", input: "bg-[#2c2c2c] text-white border-gray-600", sideActive: "bg-[#333] text-blue-400 border-l-blue-400"
   } : {
@@ -358,9 +345,9 @@ export default function Page() {
   // ==========================================================
   if (!user || modalNovaSenha) {
     return (
-      <div className={`min-h-screen flex flex-col items-center justify-center font-sans ${cores.bg}`}>
+      // ADICIONADO: p-4 para garantir espaçamento em telas pequenas
+      <div className={`min-h-screen flex flex-col items-center justify-center font-sans ${cores.bg} p-4`}>
         
-        {/* MODAL DE PRIMEIRO ACESSO */}
         {modalNovaSenha && (
             <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
                 <div className="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md animate-scale-in">
@@ -395,12 +382,11 @@ export default function Page() {
             </div>
         )}
 
-        {/* LOGIN E RECUPERAÇÃO */}
         {!modalNovaSenha && (
-            <div className={`${cores.card} p-8 rounded shadow-md w-full max-w-sm border-t-4 border-[#1351b4]`}>
+            // ADICIONADO: max-w-md para ficar um pouco mais largo e harmonioso no celular
+            <div className={`${cores.card} p-8 rounded shadow-md w-full max-w-md border-t-4 border-[#1351b4]`}>
                 
                 {!viewRecuperar ? (
-                    // --- TELA DE LOGIN ---
                     <>
                         <h1 className="text-2xl font-bold text-[#1351b4] mb-6 flex items-center gap-2">
                             <span className="font-black text-3xl">Point</span> Acesso
@@ -436,7 +422,6 @@ export default function Page() {
                         </button>
                     </>
                 ) : (
-                    // --- TELA DE RECUPERAR SENHA ---
                     <>
                          <h1 className="text-xl font-bold text-[#071d41] mb-2 flex items-center gap-2"><Lock size={20}/> Recuperar Senha</h1>
                          <p className="text-xs text-gray-500 mb-6">Siga os passos para redefinir sua senha.</p>
@@ -491,7 +476,7 @@ export default function Page() {
   return (
     <div className={`min-h-screen font-sans ${cores.bg} ${cores.text} transition-colors duration-300`}>
       {/* HEADER */}
-      <header className={`${cores.header} text-white h-16 flex items-center px-4 md:px-8 justify-between shadow-md`}>
+      <header className={`${cores.header} text-white h-16 flex items-center px-4 md:px-8 justify-between shadow-md relative z-20`}>
         <div className="flex items-center gap-4">
           <span className="font-black text-3xl tracking-tight flex items-end">Point</span>
           <div className="h-6 w-px bg-white/30 hidden md:block"></div>
@@ -508,24 +493,58 @@ export default function Page() {
         </div>
       </header>
 
-      {/* SUB-HEADER (BREADCRUMB) */}
-      <div className={`${cores.subHeader} h-12 flex items-center px-4 md:px-8 text-white shadow-inner transition-colors`}>
-        <Menu className="w-5 h-5 mr-3 cursor-pointer hover:opacity-80" />
+      {/* SUB-HEADER (BREADCRUMB + MENU MOBILE TRIGGER) */}
+      <div className={`${cores.subHeader} h-12 flex items-center px-4 md:px-8 text-white shadow-inner transition-colors relative z-10`}>
+        {/* ADICIONADO: Ao clicar no ícone Menu, abre o menu lateral no mobile */}
+        <Menu 
+            className="w-5 h-5 mr-3 cursor-pointer hover:opacity-80 md:cursor-default" 
+            onClick={() => setMenuMobileAberto(!menuMobileAberto)}
+        />
         <h2 className="font-semibold text-sm md:text-base">{view === 'registro' ? 'Registro de Ponto' : 'Ficha de Frequência'}</h2>
       </div>
 
-      <main className="max-w-7xl mx-auto p-4 md:p-8 flex flex-col md:flex-row gap-6">
-        {/* SIDEBAR */}
-        <aside className={`hidden md:block w-64 ${cores.card} rounded shadow-sm border ${cores.border} h-fit`}>
-            <div className={`p-4 border-b ${cores.border} font-bold text-[#1351b4] flex items-center gap-2`}><Menu className="w-4 h-4" /> MENU</div>
-            <nav>
-                <div onClick={() => setView('registro')} className={`p-3 px-4 flex items-center gap-3 text-sm cursor-pointer border-b ${cores.border} ${view === 'registro' ? cores.sideActive + " border-l-4 font-bold" : "hover:opacity-70 " + cores.textSec}`}><CheckSquare size={16}/> Registro de Ponto</div>
-                <div onClick={() => setView('ficha')} className={`p-3 px-4 flex items-center gap-3 text-sm cursor-pointer border-b ${cores.border} ${view === 'ficha' ? cores.sideActive + " border-l-4 font-bold" : "hover:opacity-70 " + cores.textSec}`}><FileText size={16}/> Ficha de Frequência</div>
-            </nav>
-        </aside>
+      <main className="max-w-7xl mx-auto p-4 md:p-8 flex flex-col md:flex-row gap-6 relative">
+        
+        {/* SIDEBAR (AGORA RESPONSIVA) */}
+        {/* Adicionei lógica para ser um 'Drawer' (gaveta) no mobile e fixo no desktop */}
+        <>
+            {/* Overlay Escuro para mobile */}
+            {menuMobileAberto && (
+                <div 
+                    className="fixed inset-0 bg-black/50 z-30 md:hidden animate-fade-in"
+                    onClick={() => setMenuMobileAberto(false)}
+                ></div>
+            )}
+            
+            <aside className={`
+                fixed inset-y-0 left-0 z-40 w-64 ${cores.card} shadow-2xl border-r ${cores.border} transform transition-transform duration-300 ease-in-out
+                ${menuMobileAberto ? "translate-x-0" : "-translate-x-full"}
+                md:relative md:translate-x-0 md:shadow-sm md:border md:h-fit md:block
+            `}>
+                <div className={`p-4 border-b ${cores.border} font-bold text-[#1351b4] flex items-center justify-between`}>
+                    <span className="flex items-center gap-2"><Menu className="w-4 h-4" /> MENU</span>
+                    {/* Botão de fechar só aparece no mobile */}
+                    <button onClick={() => setMenuMobileAberto(false)} className="md:hidden text-gray-500"><X size={20}/></button>
+                </div>
+                <nav>
+                    <div 
+                        onClick={() => { setView('registro'); setMenuMobileAberto(false); }} 
+                        className={`p-3 px-4 flex items-center gap-3 text-sm cursor-pointer border-b ${cores.border} ${view === 'registro' ? cores.sideActive + " border-l-4 font-bold" : "hover:opacity-70 " + cores.textSec}`}
+                    >
+                        <CheckSquare size={16}/> Registro de Ponto
+                    </div>
+                    <div 
+                        onClick={() => { setView('ficha'); setMenuMobileAberto(false); }} 
+                        className={`p-3 px-4 flex items-center gap-3 text-sm cursor-pointer border-b ${cores.border} ${view === 'ficha' ? cores.sideActive + " border-l-4 font-bold" : "hover:opacity-70 " + cores.textSec}`}
+                    >
+                        <FileText size={16}/> Ficha de Frequência
+                    </div>
+                </nav>
+            </aside>
+        </>
 
         {/* CONTEÚDO PRINCIPAL */}
-        <div className="flex-1">
+        <div className="flex-1 w-full">
             <div className={`flex items-center text-xs ${cores.textSec} mb-4`}>
                 <Home className="w-3 h-3 mr-1" /><span>Início</span><ChevronRight className="w-3 h-3 mx-1" /><span className={temaEscuro ? 'text-gray-300' : 'text-gray-700'}>{view === 'registro' ? 'Registro de Ponto' : 'Ficha de Frequência'}</span>
             </div>
@@ -541,7 +560,7 @@ export default function Page() {
                             <div className={`${cores.textSec} mt-2 text-sm capitalize`}>{horaAtual.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit' })}</div>
                         </div>
 
-                        {/* Tempo Trabalhado (Turno Atual) */}
+                        {/* Tempo Trabalhado */}
                         <div className={`${temaEscuro ? 'bg-[#333] border-gray-600' : 'bg-[#f2f2f2] border-gray-200'} w-full max-w-md p-4 rounded mb-10 flex items-center justify-center gap-4 border`}>
                             <div className={`h-10 w-6 border-2 ${temaEscuro ? 'border-gray-500' : 'border-gray-400'} rounded-sm`}></div> 
                             <div className="text-center">
@@ -560,7 +579,6 @@ export default function Page() {
                                 <BotaoSelecao titulo="Saída" icone={<LogOut className="w-6 h-6" />} ativo={tipoSelecionado === 'Saída'} habilitado={verificarPermissao('Saída')} onClick={() => verificarPermissao('Saída') && setTipoSelecionado('Saída')} temaEscuro={temaEscuro} corPadrao="bg-[#e6e6e6]" textoEscuro={!temaEscuro} />
                             </div>
                             
-                            {/* BOTÃO TRAVADO SE ESTIVER PROCESSANDO (Anti-Spam Visual) */}
                             <button 
                                 onClick={confirmarRegistro} 
                                 disabled={!tipoSelecionado || status} 
@@ -617,7 +635,6 @@ export default function Page() {
                          </div>
                     </div>
                     
-                    {/* Lista Gerada */}
                     <div className={`${cores.card} rounded shadow-sm border ${cores.border} overflow-hidden`}>
                        {gerarDiasDoMesSelecionado(mesSelecionado, anoSelecionado, historico).map((dia, idx) => (
                            <ItemDia 
@@ -647,12 +664,10 @@ function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
     const [modoEdicaoMsg, setModoEdicaoMsg] = useState(false);
     const [textoMsg, setTextoMsg] = useState("");
 
-    // Se já existir mensagem no banco, carrega ela no input
     useEffect(() => { 
         if (mensagemSalva) setTextoMsg(mensagemSalva); 
     }, [mensagemSalva]);
 
-    // === CÁLCULO INTELIGENTE DE SALDO (COM CORREÇÃO DE MADRUGADA) ===
     let saldoStr = "00:00";
     let saldoPositivo = true;
     const primeiraEntrada = dia.pontos.find(p => p.tipo === 'Entrada');
@@ -662,15 +677,12 @@ function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
         let dtEntrada = new Date(primeiraEntrada.data);
         let dtSaida = new Date(ultimaSaida.data);
 
-        // --- CORREÇÃO AQUI ---
-        // Se a hora de saída for menor que a entrada (Ex: Entrou 18h, Saiu 00h),
-        // consideramos que a saída foi no dia seguinte (+24h).
         if (dtSaida < dtEntrada) {
             dtSaida.setDate(dtSaida.getDate() + 1);
         }
 
         const diff = dtSaida - dtEntrada;
-        const meta = 8 * 60 * 60 * 1000; // Meta de 8 horas
+        const meta = 8 * 60 * 60 * 1000;
         const saldoMs = diff - meta;
         
         saldoPositivo = saldoMs >= 0;
@@ -679,7 +691,6 @@ function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
         const m = Math.floor((absSaldo % 3600000) / 60000);
         saldoStr = `${saldoPositivo ? '' : '-'}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
     } 
-    // CORREÇÃO: SE SÓ TEM ENTRADA, MOSTRA QUE DEVE 8 HORAS (-08:00)
     else if (primeiraEntrada && !ultimaSaida) {
         saldoStr = "-08:00";
         saldoPositivo = false;
@@ -722,7 +733,6 @@ function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
             {aberto && (
                 <div className={`p-6 ${temaEscuro ? 'bg-[#252525]' : 'bg-[#fafafa]'} border-t ${cores.border} animate-fade-in`}>
                     
-                    {/* Área de Edição de Mensagem */}
                     {modoEdicaoMsg ? (
                         <div className="max-w-md mx-auto bg-white p-4 rounded shadow border border-gray-200">
                              <div className="text-center mb-4">
@@ -769,7 +779,6 @@ function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
                                 </button>
                             </div>
 
-                            {/* Resumo do Dia */}
                             <div className={`max-w-md mx-auto rounded p-4 mb-4 ${temaEscuro ? 'bg-[#333]' : 'bg-[#ececec]'}`}>
                                 <div className="flex justify-between items-center text-lg font-mono font-bold text-gray-500">
                                     <div className="text-center">
@@ -819,7 +828,6 @@ function BotaoSelecao({ titulo, icone, ativo, habilitado, onClick, temaEscuro, c
     );
 }
 
-// Helper para gerar o array de dias do mês
 function gerarDiasDoMesSelecionado(mes, ano, historico) {
     const dias = [];
     const ultimoDia = new Date(ano, mes + 1, 0).getDate();
@@ -827,7 +835,6 @@ function gerarDiasDoMesSelecionado(mes, ano, historico) {
         const d = new Date(ano, mes, i);
         const dataStr = d.toLocaleDateString('pt-BR');
         const dataIso = d.toISOString().split('T')[0];
-        // Filtra pontos daquele dia específico
         const pontosDoDia = historico.filter(h => new Date(h.data).toLocaleDateString('pt-BR') === dataStr);
         
         const diaNum = String(i).padStart(2, '0');
@@ -840,5 +847,5 @@ function gerarDiasDoMesSelecionado(mes, ano, historico) {
             pontos: pontosDoDia 
         });
     }
-    return dias.reverse(); // Mostra do dia 31 pro dia 1
+    return dias.reverse();
 }
