@@ -24,7 +24,8 @@ model Usuario {
   pontos       Ponto[]
   mensagens    Mensagem[]
   notificacoes Notificacao[]
-  folgas       Folga[]       // <--- ADICIONADO: Relação com as folgas
+  folgas       Folga[]
+  consumos     Consumo[]   // <--- ADICIONADO: Relação com os consumos
 }
 
 model Ponto {
@@ -37,10 +38,10 @@ model Ponto {
 }
 
 model Mensagem {
-  id        Int     @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   dataIso   String   
   texto     String
-  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
   usuarioId Int
 }
 
@@ -55,7 +56,7 @@ model Notificacao {
   usuarioId Int
 }
 
-// <--- NOVA TABELA DE FOLGAS (Essencial para o botão funcionar)
+// Tabela de Folgas
 model Folga {
   id        Int      @id @default(autoincrement())
   data      DateTime 
@@ -63,4 +64,16 @@ model Folga {
   usuarioId Int
 
   @@unique([usuarioId, data]) // Evita folga duplicada no mesmo dia
+}
+
+// <--- NOVA TABELA DE CONSUMOS (Cantina/Loja)
+model Consumo {
+  id        Int      @id @default(autoincrement())
+  nomeItem  String
+  valor     Float
+  imagemUrl String?  // Foto do produto (opcional)
+  data      DateTime @default(now())
+  
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId Int
 }

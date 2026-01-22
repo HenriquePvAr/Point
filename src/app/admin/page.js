@@ -29,12 +29,22 @@ import {
   ArrowLeft, 
   Mail, 
   Coffee,
-  FileSpreadsheet // Ícone para o botão Excel
+  FileSpreadsheet, // Ícone Excel
+  ShoppingBag,     // Ícone Consumos
+  DollarSign,      // Ícone Dinheiro
+  Image as ImageIcon // Ícone Imagem
 } from "lucide-react";
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx'; // Biblioteca Excel
-// Biblioteca de Gráficos
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { 
+    BarChart, 
+    Bar, 
+    XAxis, 
+    YAxis, 
+    CartesianGrid, 
+    Tooltip, 
+    ResponsiveContainer 
+} from 'recharts'; // Biblioteca Gráficos
 
 export default function AdminPage() {
   // ==================================================================================
@@ -42,7 +52,7 @@ export default function AdminPage() {
   // ==================================================================================
   
   // Controle de Navegação e Loading
-  const [view, setView] = useState("dashboard"); // Opções: 'dashboard', 'relatorios'
+  const [view, setView] = useState("dashboard"); // 'dashboard', 'relatorios', 'consumos'
   const [loading, setLoading] = useState(true);
 
   // Dados do Admin Logado
@@ -53,44 +63,55 @@ export default function AdminPage() {
       cargo: "Gestor"
   });
 
-  // Dados Principais (Banco de Dados Local)
+  // Dados Principais
   const [usuarios, setUsuarios] = useState([]);
   const [pontosGerais, setPontosGerais] = useState([]);
   const [folgasGerais, setFolgasGerais] = useState([]); 
   const [todasMensagens, setTodasMensagens] = useState([]); 
-  const [dadosGrafico, setDadosGrafico] = useState([]); // <--- DADOS PARA O GRÁFICO
   
-  // Notificações e Atividades Recentes
-  const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
+  // Dados Específicos
+  const [dadosGrafico, setDadosGrafico] = useState([]); 
   const [notificacoes, setNotificacoes] = useState([]); 
+  const [listaConsumos, setListaConsumos] = useState([]); // Dados de Consumo
 
-  // Busca e Seleção de Usuário
+  // Estados de Seleção e Filtros
   const [termoBusca, setTermoBusca] = useState("");
   const [usuarioSelecionado, setUsuarioSelecionado] = useState(null); 
   const [relatorioDetalhado, setRelatorioDetalhado] = useState(null); 
+  const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
+  const [colaboradorConsumo, setColaboradorConsumo] = useState(""); // ID para aba consumos
 
-  // Modais (Pop-ups)
+  // --- MODAIS ---
   const [modalNovoUsuario, setModalNovoUsuario] = useState(false);
   const [modalEditarUsuario, setModalEditarUsuario] = useState(false);
   const [modalPerfilAdmin, setModalPerfilAdmin] = useState(false); 
+  const [modalNovoConsumo, setModalNovoConsumo] = useState(false); // Modal Consumo
 
-  // Formulários
-  const [novoUser, setNovoUser] = useState({ nome: "", email: "", cargo: "" });
+  // --- FORMULÁRIOS ---
+  const [novoUser, setNovoUser] = useState({ 
+      nome: "", 
+      email: "", 
+      cargo: "" 
+  });
+  
   const [usuarioParaEditar, setUsuarioParaEditar] = useState({});
   const [adminParaEditar, setAdminParaEditar] = useState({}); 
+  
+  const [novoConsumo, setNovoConsumo] = useState({ 
+      nomeItem: "", 
+      valor: "", 
+      imagemUrl: "" 
+  });
+  const [consumoEditando, setConsumoEditando] = useState(null);
 
-  // Filtros de Data (Ficha Individual)
+  // --- FILTROS DE DATA ---
   const [mesFicha, setMesFicha] = useState(new Date().getMonth());
   const [anoFicha, setAnoFicha] = useState(2026);
-
-  // Filtros de Data (Relatório Geral)
   const [mesRelatorio, setMesRelatorio] = useState(new Date().getMonth());
   const [anoRelatorio, setAnoRelatorio] = useState(2026);
   const [dadosRelatorio, setDadosRelatorio] = useState([]);
-
-
   // ==================================================================================
-  // 2. CARREGAMENTO INICIAL DE DADOS (FETCH API)
+  // 2. CARREGAMENTO INICIAL DE DADOS
   // ==================================================================================
   
   useEffect(() => {
@@ -101,7 +122,7 @@ export default function AdminPage() {
     try {
         setLoading(true);
 
-        // 1. Buscar dados básicos
+        // 1. Buscas paralelas iniciais
         const [resUsers, resMsgs, resNotif] = await Promise.all([
             fetch('/api/usuarios'),
             fetch('/api/mensagens'),
@@ -115,6 +136,7 @@ export default function AdminPage() {
         if (adminEncontrado) {
             setAdminUser(adminEncontrado);
         } else {
+            // Fallback visual caso não ache nenhum admin no banco
             setAdminUser({ 
                 nome: "Admin Master", 
                 email: "admin@sistema.com", 
@@ -126,7 +148,7 @@ export default function AdminPage() {
         let todosPontos = [];
         let todasFolgas = [];
 
-        // 2. Buscar pontos e folgas de todos os usuários
+        // 2. Buscar pontos e folgas detalhados
         for (let user of dataUsers) {
             try {
               // Pontos
@@ -143,50 +165,60 @@ export default function AdminPage() {
               });
 
             } catch(e) { 
-                console.log(`Erro user ${user.id}`); 
+                console.log(`Erro ao carregar dados do usuário ${user.id}`); 
             }
         }
 
         const dataMsg = await resMsgs.json();
         const dataNotif = await resNotif.json();
         
-        // Atualiza estados
+        // 3. Atualiza estados globais
         setUsuarios(dataUsers);
         setPontosGerais(todosPontos);
         setFolgasGerais(todasFolgas);
         setTodasMensagens(dataMsg);
         setNotificacoes(Array.isArray(dataNotif) ? dataNotif : []);
 
-        // --- GERA DADOS DO GRÁFICO ---
+        // 4. Processamentos Adicionais
         processarGrafico(todosPontos);
+        await carregarConsumos(); // Carrega a cantina/loja
 
         setLoading(false);
 
     } catch (error) {
         console.error(error);
-        toast.error("Erro ao carregar dados.");
+        toast.error("Erro crítico ao carregar dados.");
         setLoading(false);
     }
   }
 
-  // --- FUNÇÃO PARA GERAR O GRÁFICO (Últimos 7 dias) ---
+  // --- BUSCAR CONSUMOS (API) ---
+  async function carregarConsumos() {
+      try {
+          const res = await fetch('/api/consumos');
+          const data = await res.json();
+          setListaConsumos(data);
+      } catch (e) {
+          console.error("Erro ao buscar consumos");
+      }
+  }
+
+  // --- GERAR GRÁFICO (Últimos 7 dias) ---
   function processarGrafico(pontos) {
       const hoje = new Date();
       const dados = [];
       
-      // Loop dos últimos 7 dias
       for (let i = 6; i >= 0; i--) {
           const d = new Date(hoje);
           d.setDate(hoje.getDate() - i);
           const dataStr = d.toLocaleDateString('pt-BR');
           const diaSemana = d.toLocaleDateString('pt-BR', { weekday: 'short' });
 
-          // Filtra pontos do dia (todos os usuários)
           const pontosDoDia = pontos.filter(p => new Date(p.data).toLocaleDateString('pt-BR') === dataStr);
           
           let minutosTrabalhadosDia = 0;
           
-          // Agrupa por usuário para somar corretamente
+          // Agrupa por usuário
           const usuariosIds = [...new Set(pontosDoDia.map(p => p.usuarioId))];
           
           usuariosIds.forEach(uid => {
@@ -202,17 +234,15 @@ export default function AdminPage() {
           });
 
           dados.push({
-              name: diaSemana, // Eixo X
-              horas: Math.round(minutosTrabalhadosDia / 60), // Eixo Y
+              name: diaSemana, 
+              horas: Math.round(minutosTrabalhadosDia / 60), 
               dataCompleta: dataStr
           });
       }
       setDadosGrafico(dados);
   }
-
-
   // ==================================================================================
-  // 3. LÓGICA DE RELATÓRIOS E CÁLCULOS
+  // 3. LÓGICA DE RELATÓRIOS (Recálculo Automático)
   // ==================================================================================
   
   useEffect(() => {
@@ -246,12 +276,10 @@ export default function AdminPage() {
 
               diasTrabalhadosEsperados++;
 
-              // Verifica Ponto
               const pontosDia = pontosGerais.filter(p => p.usuarioId === user.id && new Date(p.data).toLocaleDateString('pt-BR') === dataStr);
               const entrada = pontosDia.find(p => p.tipo === 'Entrada');
               const tevePonto = pontosDia.length > 0;
               
-              // Lógica de Falta
               const dataAtualSemHora = new Date(dataAtual.toDateString());
               const hojeSemHora = new Date(hoje.toDateString());
 
@@ -259,7 +287,6 @@ export default function AdminPage() {
                   diasFaltosos.push(`${i}/${mesRelatorio + 1}`);
               }
 
-              // Calcula horas trabalhadas
               if (entrada) {
                   const ultimaSaida = pontosDia.filter(p => p.tipo === 'Saída').pop();
                   if (ultimaSaida) {
@@ -275,7 +302,7 @@ export default function AdminPage() {
               }
           }
 
-          const metaMinutos = diasTrabalhadosEsperados * 480; 
+          const metaMinutos = diasTrabalhadosEsperados * 480; // 8h
           const saldoMinutos = minutosTrabalhados - metaMinutos;
 
           const horasTotal = Math.floor(minutosTrabalhados / 60);
@@ -294,13 +321,76 @@ export default function AdminPage() {
       });
       setDadosRelatorio(relatorio);
   }
-
-
   // ==================================================================================
-  // 4. AÇÕES, EMAIL E EXCEL
+  // 4. AÇÕES: CONSUMOS (CANTINA) E GERAIS
   // ==================================================================================
+  
+  async function handleSalvarConsumo() {
+      if (!colaboradorConsumo) return toast.warning("Selecione um funcionário.");
+      if (!novoConsumo.nomeItem || !novoConsumo.valor) return toast.warning("Preencha nome e valor.");
 
-  // -- FUNÇÃO PARA BAIXAR EXCEL --
+      const payload = {
+          nomeItem: novoConsumo.nomeItem,
+          valor: novoConsumo.valor,
+          imagemUrl: novoConsumo.imagemUrl,
+          usuarioId: colaboradorConsumo
+      };
+
+      try {
+          let res;
+          if (consumoEditando) {
+              res = await fetch('/api/consumos', { 
+                  method: 'PUT', 
+                  body: JSON.stringify({ ...payload, id: consumoEditando.id }) 
+              });
+          } else {
+              res = await fetch('/api/consumos', { 
+                  method: 'POST', 
+                  body: JSON.stringify(payload) 
+              });
+          }
+
+          const data = await res.json();
+          if (data.success) {
+              toast.success(consumoEditando ? "Item atualizado!" : "Item adicionado!");
+              setModalNovoConsumo(false);
+              setNovoConsumo({ nomeItem: "", valor: "", imagemUrl: "" });
+              setConsumoEditando(null);
+              carregarConsumos(); 
+          } else {
+              toast.error("Erro ao salvar item.");
+          }
+      } catch (e) { toast.error("Erro de conexão."); }
+  }
+
+  async function handleExcluirConsumo(id) {
+      if (confirm("Tem certeza que deseja remover este item?")) {
+          try {
+              const res = await fetch(`/api/consumos?id=${id}`, { method: 'DELETE' });
+              if (res.ok) {
+                  toast.success("Item removido.");
+                  carregarConsumos();
+              } else { toast.error("Erro ao remover."); }
+          } catch (e) { toast.error("Erro de conexão."); }
+      }
+  }
+
+  function abrirModalEdicaoConsumo(item) {
+      setConsumoEditando(item);
+      setNovoConsumo({
+          nomeItem: item.nomeItem,
+          valor: item.valor,
+          imagemUrl: item.imagemUrl || ""
+      });
+      setModalNovoConsumo(true);
+  }
+
+  const totalConsumo = listaConsumos
+      .filter(c => c.usuarioId === parseInt(colaboradorConsumo))
+      .reduce((acc, curr) => acc + curr.valor, 0);
+
+
+  // -- EXPORTAR EXCEL --
   function handleExportarExcel() {
       const dadosExcel = [];
       
@@ -330,22 +420,17 @@ export default function AdminPage() {
       const worksheet = XLSX.utils.json_to_sheet(dadosExcel);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Relatório Ponto");
-      
       XLSX.writeFile(workbook, `Relatorio_Geral_${mesRelatorio + 1}_${anoRelatorio}.xlsx`);
-      toast.success("Download do Excel iniciado!");
+      toast.success("Download iniciado!");
   }
-
-
-  // -- Abrir Modal de Edição do Admin --
+  // -- ADMIN EDIT --
   function abrirEdicaoAdmin() {
       setAdminParaEditar({ ...adminUser });
       setModalPerfilAdmin(true);
   }
 
-  // -- Salvar Edição do Admin no Banco --
   async function salvarPerfilAdmin() {
-      if (!adminUser.id) return toast.error("ID do admin não encontrado.");
-
+      if (!adminUser.id) return toast.error("ID não encontrado.");
       try {
           const res = await fetch('/api/usuarios', {
               method: 'PUT',
@@ -357,26 +442,18 @@ export default function AdminPage() {
                   acao: 'editar'
               })
           });
-
           const data = await res.json();
-
           if (data.success) {
-              setAdminUser(data.usuario);
+              setAdminUser(data.usuario); 
               setModalPerfilAdmin(false);
               toast.success("Perfil atualizado!");
-          } else {
-              toast.error(data.message || "Erro ao atualizar.");
-          }
-      } catch (e) {
-          toast.error("Erro de conexão.");
-      }
+          } else { toast.error(data.message); }
+      } catch (e) { toast.error("Erro de conexão."); }
   }
 
-
-  // -- Envio de Email do Relatório --
+  // -- EMAIL --
   async function handleEnviarEmailRelatorio(colaborador) {
-      const toastId = toast.loading(`Gerando relatório de ${colaborador.nome}...`);
-      
+      const toastId = toast.loading("Enviando relatório...");
       try {
           const diasRelatorio = gerarDiasDoMesParaRelatorio(
               mesRelatorio, 
@@ -429,48 +506,32 @@ export default function AdminPage() {
           const data = await res.json();
           if (data.success) {
               toast.success(`Enviado para ${adminUser.email}`, { id: toastId });
-          } else {
-              throw new Error("Falha no envio.");
-          }
+          } else { throw new Error("Falha no envio"); }
 
-      } catch (e) {
-          toast.error("Erro ao enviar email.", { id: toastId });
-      }
+      } catch (e) { toast.error("Erro ao enviar email.", { id: toastId }); }
   }
 
-
-  // -- Criar Novo Usuário --
+  // -- USUÁRIOS CRUD --
   async function handleNovoUsuario() {
       if(!novoUser.nome || !novoUser.email) return toast.warning("Preencha os campos obrigatórios.");
-      
       try {
-        const res = await fetch("/api/usuarios", { 
-            method: "POST", 
-            body: JSON.stringify(novoUser) 
-        });
+        const res = await fetch("/api/usuarios", { method: "POST", body: JSON.stringify(novoUser) });
         const data = await res.json();
-
         if (data.success) {
             setUsuarios([...usuarios, data.usuario]);
             setModalNovoUsuario(false);
             setNovoUser({ nome: "", email: "", cargo: "" });
             toast.success("Colaborador criado com sucesso!");
             carregarDados(); 
-        } else { 
-            toast.error(data.message); 
-        }
-      } catch (error) { 
-          toast.error("Erro ao conectar com o servidor."); 
-      }
+        } else { toast.error(data.message); }
+      } catch (error) { toast.error("Erro ao conectar com o servidor."); }
   }
 
-  // -- Abrir Edição de Usuário --
   function abrirEdicao(user) {
       setUsuarioParaEditar({ ...user });
       setModalEditarUsuario(true);
   }
 
-  // -- Salvar Edição de Usuário (Com atualização imediata) --
   async function handleSalvarEdicao() {
       try {
           const res = await fetch('/api/usuarios', { 
@@ -478,72 +539,42 @@ export default function AdminPage() {
               body: JSON.stringify({ ...usuarioParaEditar, acao: 'editar' }) 
           });
           const data = await res.json();
-          
           if (data.success) {
-              setUsuarios(prevUsuarios => prevUsuarios.map(u => 
-                  u.id === usuarioParaEditar.id ? data.usuario : u
-              ));
-              
-              toast.success("Dados do colaborador atualizados!");
+              setUsuarios(prev => prev.map(u => u.id === usuarioParaEditar.id ? data.usuario : u));
+              toast.success("Dados atualizados!");
               setModalEditarUsuario(false);
-          } else { 
-              toast.error(data.message); 
-          }
-      } catch (e) { 
-          toast.error("Erro ao salvar alterações."); 
-      }
+          } else { toast.error(data.message); }
+      } catch (e) { toast.error("Erro ao salvar alterações."); }
   }
 
-  // -- Bloquear / Desbloquear Usuário --
   async function toggleStatusUsuario(user) {
       const novoStatus = user.status === 'ativo' ? 'inativo' : 'ativo';
-      
-      if (confirm(`Tem certeza que deseja ${novoStatus === 'ativo' ? 'ativar' : 'bloquear'} o acesso de ${user.nome}?`)) {
-          try {
-              const res = await fetch('/api/usuarios', { 
-                  method: 'PUT', 
-                  body: JSON.stringify({ id: user.id, status: novoStatus }) 
-              });
-              const data = await res.json();
-
-              if (data.success) {
-                  const atualizados = usuarios.map(u => u.id === user.id ? {...u, status: novoStatus} : u);
-                  setUsuarios(atualizados);
-                  
-                  if (usuarioSelecionado?.id === user.id) {
-                      setUsuarioSelecionado({...user, status: novoStatus});
-                  }
-                  
-                  toast.success(`Status alterado para ${novoStatus}!`);
-              } else { 
-                  toast.error("Erro ao salvar status."); 
+      if (confirm(`Alterar status para ${novoStatus}?`)) {
+          const res = await fetch('/api/usuarios', { method: 'PUT', body: JSON.stringify({ id: user.id, status: novoStatus }) });
+          const data = await res.json();
+          if (data.success) {
+              setUsuarios(prev => prev.map(u => u.id === user.id ? {...u, status: novoStatus} : u));
+              if (usuarioSelecionado?.id === user.id) {
+                  setUsuarioSelecionado({...user, status: novoStatus});
               }
-          } catch (e) { 
-              toast.error("Erro de conexão."); 
-          }
+              toast.success("Status alterado.");
+          } else { toast.error("Erro ao salvar status."); }
       }
   }
 
-  // -- Excluir Usuário --
   async function handleExcluirUsuario(user) {
     if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?`)) {
         try {
             const res = await fetch(`/api/usuarios?id=${user.id}`, { method: 'DELETE' });
-            
             if (res.ok) {
                 toast.success("Usuário excluído com sucesso.");
                 setUsuarios(usuarios.filter(u => u.id !== user.id)); 
                 carregarDados(); 
-            } else { 
-                toast.error("Erro ao excluir."); 
-            }
-        } catch (e) { 
-            toast.error("Erro de conexão."); 
-        }
+            } else { toast.error("Erro ao excluir usuário."); }
+        } catch (e) { toast.error("Erro de conexão."); }
     }
   }
-
-  // Helper para verificar status online
+  // Helpers
   function getStatusUsuario(userId) {
       const hojeStr = new Date().toLocaleDateString('pt-BR');
       const pontosHoje = pontosGerais
@@ -551,26 +582,20 @@ export default function AdminPage() {
         .sort((a,b) => new Date(a.data) - new Date(b.data));
 
       if (pontosHoje.length === 0) return "offline";
-      const ultimoPonto = pontosHoje[pontosHoje.length - 1];
-      return ['Entrada', 'Volta Intervalo'].includes(ultimoPonto.tipo) ? "online" : "pausa"; 
+      return ['Entrada', 'Volta Intervalo'].includes(pontosHoje[pontosHoje.length - 1].tipo) ? "online" : "pausa"; 
   }
 
-  // Helper para buscar justificativa
   function getMensagemDia(dataIso) {
-      if (!usuarioSelecionado && !relatorioDetalhado) return null;
-      const uid = usuarioSelecionado ? usuarioSelecionado.id : relatorioDetalhado.id;
+      const uid = usuarioSelecionado?.id || relatorioDetalhado?.id;
       return todasMensagens.find(m => m.usuarioId == uid && m.dataIso === dataIso)?.texto;
   }
 
-  const usuariosFiltrados = usuarios.filter(u => 
-    u.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
-    (u.email && u.email.toLowerCase().includes(termoBusca.toLowerCase()))
-  );
+  const usuariosFiltrados = usuarios.filter(u => u.nome.toLowerCase().includes(termoBusca.toLowerCase()));
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans flex text-gray-800">
       
-      {/* ======================= SIDEBAR (MENU LATERAL) ======================= */}
+      {/* SIDEBAR */}
       <aside className="w-64 bg-[#071d41] text-white flex flex-col fixed h-full z-10 shadow-xl print:hidden">
         <div className="p-6 border-b border-blue-900">
             <h1 className="text-2xl font-black tracking-tight">Pinguim<br/><span className="text-blue-300">Admin</span></h1>
@@ -588,6 +613,13 @@ export default function AdminPage() {
                 active={view === 'relatorios'} 
                 onClick={() => { setView('relatorios'); setUsuarioSelecionado(null); setRelatorioDetalhado(null); }} 
             />
+            {/* NOVO ITEM DO MENU: CONSUMOS */}
+            <BotaoMenu 
+                icon={<ShoppingBag size={20}/>} 
+                text="Consumos" 
+                active={view === 'consumos'} 
+                onClick={() => { setView('consumos'); setUsuarioSelecionado(null); setRelatorioDetalhado(null); }} 
+            />
         </nav>
         <div className="p-4 border-t border-blue-900">
             <button 
@@ -599,20 +631,19 @@ export default function AdminPage() {
         </div>
       </aside>
 
-      {/* ======================= CONTEÚDO PRINCIPAL ======================= */}
+      {/* CONTEÚDO PRINCIPAL */}
       <main className="ml-64 flex-1 p-8 print:ml-0 print:p-0 print:w-full">
         
         {/* HEADER SUPERIOR */}
         <header className="flex justify-between items-center mb-8 relative print:hidden">
             <div>
                 <h2 className="text-2xl font-bold text-[#071d41]">
-                    {usuarioSelecionado ? `Gestão: ${usuarioSelecionado.nome}` : view === 'relatorios' ? 'Relatórios Mensais' : 'Painel de Controle'}
+                    {view === 'consumos' ? 'Cantina / Consumos' : view === 'relatorios' ? 'Relatórios' : 'Painel de Controle'}
                 </h2>
-                <p className="text-gray-500 text-sm">Administração e monitoramento de ponto.</p>
+                <p className="text-gray-500 text-sm">Gestão completa do sistema.</p>
             </div>
             
             <div className="flex items-center gap-4">
-                {/* ÍCONE DE NOTIFICAÇÃO (SINO) */}
                 <div className="relative">
                     <button 
                         onClick={() => setMostrarNotificacoes(!mostrarNotificacoes)} 
@@ -646,7 +677,6 @@ export default function AdminPage() {
                     )}
                 </div>
 
-                {/* PERFIL DO ADMIN */}
                 <div className="flex items-center gap-3 pl-4 border-l">
                     <div className="text-right hidden md:block">
                         <p className="text-sm font-bold text-[#071d41]">{adminUser.nome}</p>
@@ -673,9 +703,10 @@ export default function AdminPage() {
             </div>
         ) : (
             <>
-                {/* 1. DASHBOARD */}
+                {/* 1. DASHBOARD COM GRÁFICO (NOVO) */}
                 {view === 'dashboard' && !usuarioSelecionado && (
                     <div className="space-y-6 animate-fade-in print:hidden">
+                        
                         {/* CARDS KPI */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <CardResumo 
@@ -714,239 +745,159 @@ export default function AdminPage() {
                              </div>
                         </div>
 
-                        {/* TABELA DE USUÁRIOS */}
-                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                            <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center bg-gray-50 gap-4">
-                                <h3 className="font-bold text-[#071d41] text-lg">Gerenciar Colaboradores</h3>
-                                <div className="flex gap-2 w-full md:w-auto">
-                                    <div className="relative flex-1 md:flex-none">
-                                        <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                                        <input 
-                                            type="text" 
-                                            placeholder="Buscar nome ou email..." 
-                                            className="pl-9 pr-4 py-2 border rounded-full text-sm focus:outline-blue-500 w-full md:w-64 bg-white" 
-                                            value={termoBusca}
-                                            onChange={(e) => setTermoBusca(e.target.value)}
-                                        />
-                                    </div>
-                                    <button 
-                                        onClick={() => setModalNovoUsuario(true)} 
-                                        className="bg-[#1351b4] hover:bg-blue-800 text-white px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition shadow-sm"
-                                    >
-                                        <UserPlus size={16} /> <span className="hidden md:inline">Adicionar</span>
-                                    </button>
+                        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                            <div className="p-4 border-b flex justify-between items-center">
+                                <h3 className="font-bold text-[#071d41]">Colaboradores</h3>
+                                <div className="flex gap-2">
+                                    <input placeholder="Buscar..." className="border p-2 rounded text-sm" value={termoBusca} onChange={(e) => setTermoBusca(e.target.value)} />
+                                    <button onClick={() => setModalNovoUsuario(true)} className="bg-[#1351b4] text-white px-4 py-2 rounded text-sm flex gap-2"><UserPlus size={16}/> Novo</button>
                                 </div>
                             </div>
-                            
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left text-sm">
-                                    <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-xs">
-                                        <tr>
-                                            <th className="p-4">Colaborador</th>
-                                            <th className="p-4">Cargo</th>
-                                            <th className="p-4 text-center">Acesso</th>
-                                            <th className="p-4 text-center">Status Hoje</th>
-                                            <th className="p-4 text-center">Ações</th>
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-gray-100"><tr><th className="p-4">Nome</th><th className="p-4">Cargo</th><th className="p-4 text-center">Status</th><th className="p-4 text-center">Ações</th></tr></thead>
+                                <tbody>
+                                    {usuariosFiltrados.map(user => (
+                                        <tr key={user.id} className="border-t hover:bg-gray-50">
+                                            <td className="p-4 font-bold">{user.nome}<br/><span className="text-xs font-normal text-gray-400">{user.email}</span></td>
+                                            <td className="p-4">{user.cargo}</td>
+                                            <td className="p-4 text-center"><span className={`px-2 py-1 rounded text-xs border ${user.status==='ativo'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{user.status}</span></td>
+                                            <td className="p-4 flex justify-center gap-2">
+                                                <button onClick={() => setUsuarioSelecionado(user)} className="bg-blue-100 text-blue-600 p-2 rounded"><Eye size={18}/></button>
+                                                <button onClick={() => abrirEdicao(user)} className="bg-orange-100 text-orange-600 p-2 rounded"><Edit3 size={18}/></button>
+                                                <button onClick={() => handleExcluirUsuario(user)} className="bg-red-100 text-red-600 p-2 rounded"><Trash2 size={18}/></button>
+                                            </td>
                                         </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100">
-                                        {usuariosFiltrados.length === 0 && (
-                                            <tr>
-                                                <td colSpan="5" className="p-8 text-center text-gray-400 italic">
-                                                    Nenhum colaborador encontrado com esse termo.
-                                                </td>
-                                            </tr>
-                                        )}
-                                        {usuariosFiltrados.map(user => {
-                                            const statusHoje = getStatusUsuario(user.id);
-                                            return (
-                                                <tr key={user.id} className={`hover:bg-blue-50 transition ${user.status === 'inativo' ? 'opacity-60 bg-gray-50' : ''}`}>
-                                                    <td className="p-4">
-                                                        <div className="font-bold text-[#071d41] text-base">{user.nome}</div>
-                                                        <div className="text-xs text-gray-400 flex flex-col">
-                                                            {user.email ? <span>{user.email}</span> : <span>Sem e-mail</span>}
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-4 text-gray-600 font-medium">{user.cargo}</td>
-                                                    <td className="p-4 text-center">
-                                                        <span className={`px-2 py-1 rounded text-xs font-bold border ${user.status === 'ativo' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
-                                                            {user.status.toUpperCase()}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-4 text-center"><BadgeStatus status={statusHoje} /></td>
-                                                    <td className="p-4 text-center">
-                                                        <div className="flex items-center justify-center gap-2">
-                                                            <button 
-                                                                onClick={() => setUsuarioSelecionado(user)} 
-                                                                className="bg-blue-100 text-[#1351b4] p-2 rounded hover:bg-blue-200 transition"
-                                                                title="Ver Espelho de Ponto"
-                                                            >
-                                                                <Eye size={18} />
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => abrirEdicao(user)} 
-                                                                className="bg-orange-100 text-orange-600 p-2 rounded hover:bg-orange-200 transition"
-                                                                title="Editar Dados"
-                                                            >
-                                                                <Edit3 size={18} />
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => handleExcluirUsuario(user)} 
-                                                                className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200 transition"
-                                                                title="Excluir Colaborador"
-                                                            >
-                                                                <Trash2 size={18} />
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 )}
 
-                {/* 2. RELATÓRIOS (LISTA COM IMPRESSÃO CORRIGIDA) */}
+                {/* 2. RELATÓRIOS (LISTA) */}
                 {view === 'relatorios' && !usuarioSelecionado && !relatorioDetalhado && (
                     <div className="space-y-6 animate-fade-in">
-                        
-                        {/* CABEÇALHO APENAS NA IMPRESSÃO */}
+                        {/* Cabeçalho de Impressão */}
                         <div className="hidden print:block text-center mb-6">
                             <h1 className="text-2xl font-bold">Relatório Geral de Ponto</h1>
                             <p className="text-sm">Período: {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mesRelatorio]} / {anoRelatorio}</p>
                         </div>
 
-                        <div className="bg-white p-6 rounded shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center print:border-none print:shadow-none print:p-0">
-                            <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg print:hidden">
-                                <FileText size={24} className="text-[#1351b4]"/> Relatório Mensal de Ponto
-                            </h3>
+                        <div className="bg-white p-6 rounded shadow-sm border flex justify-between items-center print:shadow-none print:border-none print:p-0">
+                            <h3 className="font-bold text-[#071d41] print:hidden">Relatório Mensal</h3>
                             <div className="flex gap-2 print:hidden">
-                                 <select value={mesRelatorio} onChange={e => setMesRelatorio(Number(e.target.value))} className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer">
-                                     {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((m,i) => <option key={i} value={i}>{m}</option>)}
-                                 </select>
-                                 <select value={anoRelatorio} onChange={e => setAnoRelatorio(Number(e.target.value))} className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer">
-                                     {Array.from({length: 5}, (_,i) => 2026 + i).map(a => <option key={a} value={a}>{a}</option>)}
-                                 </select>
-                                 
-                                 {/* BOTÃO EXPORTAR EXCEL */}
-                                 <button 
-                                    onClick={handleExportarExcel}
-                                    className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition shadow-sm"
-                                 >
-                                     <FileSpreadsheet size={16}/> Excel
-                                 </button>
-
-                                 {/* BOTÃO EXPORTAR PDF (Imprime a Lista) */}
-                                 <button 
-                                    onClick={() => window.print()}
-                                    className="bg-red-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-red-700 transition shadow-sm"
-                                 >
-                                     <Printer size={16}/> PDF
-                                 </button>
+                                <select value={mesRelatorio} onChange={e => setMesRelatorio(Number(e.target.value))} className="border p-2 rounded text-sm">{["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"].map((m,i)=><option key={i} value={i}>{m}</option>)}</select>
+                                <select value={anoRelatorio} onChange={e => setAnoRelatorio(Number(e.target.value))} className="border p-2 rounded text-sm">{[2025,2026,2027].map(a=><option key={a} value={a}>{a}</option>)}</select>
+                                <button onClick={handleExportarExcel} className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold flex gap-2"><FileSpreadsheet size={16}/> Excel</button>
+                                <button onClick={() => window.print()} className="bg-red-600 text-white px-4 py-2 rounded text-sm font-bold flex gap-2"><Printer size={16}/> PDF</button>
                             </div>
                         </div>
 
-                        <div className="bg-white rounded shadow-sm border overflow-hidden print:border print:shadow-none">
-                            <table className="w-full text-left text-sm print:text-xs border-collapse">
-                                <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-xs print:bg-gray-200">
-                                    <tr>
-                                        <th className="p-3 border">Colaborador</th>
-                                        <th className="p-3 border text-center">Horas Trabalhadas</th>
-                                        <th className="p-3 border text-center">Saldo de Horas</th>
-                                        <th className="p-3 border text-center">Dias de Folga</th>
-                                        <th className="p-3 border text-center print:hidden">Ação</th>
-                                    </tr>
-                                </thead>
+                        <div className="bg-white rounded shadow-sm border overflow-hidden print:border-0">
+                            <table className="w-full text-left text-sm print:text-xs">
+                                <thead className="bg-gray-100 print:bg-gray-200"><tr><th className="p-3">Nome</th><th className="p-3 text-center">Horas</th><th className="p-3 text-center">Saldo</th><th className="p-3 text-center">Obs</th><th className="p-3 text-center print:hidden">Ação</th></tr></thead>
                                 <tbody>
                                     {dadosRelatorio.map(rel => (
-                                        <tr key={rel.id} className="hover:bg-gray-50 transition print:break-inside-avoid">
-                                            <td className="p-3 border font-bold text-[#071d41]">
-                                                {rel.nome}<br/>
-                                                <span className="text-[10px] text-gray-500 font-normal">{rel.email}</span>
-                                            </td>
-                                            <td className="p-3 border text-center font-mono text-gray-700 font-medium">{rel.totalHoras}</td>
-                                            <td className="p-3 border text-center font-bold">
-                                                <span className={`px-2 py-1 rounded ${rel.saldoMinutos >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                                                    {formatarSaldo(rel.saldoMinutos)}
-                                                </span>
-                                            </td>
-                                            <td className="p-3 border text-center">
-                                                {rel.diasFolga > 0 ? (
-                                                    <span className="bg-blue-100 text-blue-700 px-2 rounded text-xs font-bold border border-blue-200 print:border-black">
-                                                        {rel.diasFolga} Dias Folga
-                                                    </span>
-                                                ) : (
-                                                    rel.faltas.length > 0 ? (
-                                                        <div className="flex flex-wrap gap-1 justify-center">
-                                                            {rel.faltas.slice(0, 5).map((f, i) => (
-                                                                <span key={i} className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-200">
-                                                                    {f}
-                                                                </span>
-                                                            ))}
-                                                            {rel.faltas.length > 5 && <span className="text-xs text-gray-500">+{rel.faltas.length - 5}</span>}
-                                                        </div>
-                                                    ) : <span className="text-green-500 font-bold text-xs flex items-center justify-center gap-1"><CheckCircle size={12}/> 100% Presente</span>
-                                                )}
-                                            </td>
-                                            <td className="p-3 border text-center print:hidden">
-                                                <button onClick={() => setRelatorioDetalhado(rel)} className="bg-[#1351b4] text-white px-3 py-1 rounded text-xs hover:bg-blue-800 flex items-center gap-1 mx-auto transition shadow-sm">
-                                                    <FileText size={14}/> Abrir Folha
-                                                </button>
-                                            </td>
+                                        <tr key={rel.id} className="border-t hover:bg-gray-50 print:break-inside-avoid">
+                                            <td className="p-3 font-bold">{rel.nome}</td>
+                                            <td className="p-3 text-center font-mono">{rel.totalHoras}</td>
+                                            <td className="p-3 text-center font-bold"><span className={`px-2 py-1 rounded ${rel.saldoMinutos >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{formatarSaldo(rel.saldoMinutos)}</span></td>
+                                            <td className="p-3 text-center">{rel.diasFolga > 0 ? `${rel.diasFolga} Folgas` : (rel.faltas.length > 0 ? `${rel.faltas.length} Faltas` : "100%")}</td>
+                                            <td className="p-3 text-center print:hidden"><button onClick={() => setRelatorioDetalhado(rel)} className="bg-[#1351b4] text-white px-3 py-1 rounded text-xs"><FileText size={14}/> Abrir</button></td>
                                         </tr>
                                     ))}
-                                    {dadosRelatorio.length === 0 && (
-                                        <tr><td colSpan="5" className="p-10 text-center text-gray-400">Nenhum dado encontrado para o período selecionado.</td></tr>
-                                    )}
                                 </tbody>
                             </table>
-                        </div>
-                        <div className="mt-4 p-4 bg-blue-50 rounded border border-blue-100 text-xs text-blue-800 flex items-start gap-2 print:hidden">
-                            <AlertCircle size={16} className="mt-0.5"/>
-                            <p><strong>Nota do Sistema:</strong> Dias marcados como Folga não descontam horas do saldo. Dias sem ponto e sem folga descontam 8 horas.</p>
                         </div>
                     </div>
                 )}
 
-                {/* 3. FOLHA DE PONTO DETALHADA */}
+                {/* 3. CONSUMOS (NOVA ABA) */}
+                {view === 'consumos' && (
+                    <div className="space-y-6 animate-fade-in print:hidden">
+                        <div className="bg-white p-6 rounded shadow-sm border border-gray-200">
+                             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                                <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg"><ShoppingBag size={24} className="text-[#1351b4]"/> Controle de Consumo (15 Dias)</h3>
+                                <div className="flex gap-2 w-full md:w-auto">
+                                    <select 
+                                        className="border p-2 rounded text-sm w-full md:w-64" 
+                                        onChange={(e) => setColaboradorConsumo(e.target.value)}
+                                        value={colaboradorConsumo || ""}
+                                    >
+                                        <option value="">Selecione um Funcionário...</option>
+                                        {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                                    </select>
+                                    <button 
+                                        onClick={() => {
+                                            if(!colaboradorConsumo) return toast.warning("Selecione um funcionário!");
+                                            setConsumoEditando(null);
+                                            setNovoConsumo({ nomeItem: "", valor: "", imagemUrl: "" });
+                                            setModalNovoConsumo(true);
+                                        }} 
+                                        className="bg-[#1351b4] text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-blue-800"
+                                    >
+                                        <PlusCircle size={16}/> Adicionar Item
+                                    </button>
+                                </div>
+                             </div>
+
+                             {colaboradorConsumo ? (
+                                <>
+                                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center mb-6">
+                                        <div>
+                                            <p className="text-xs font-bold text-blue-500 uppercase">Total a Pagar</p>
+                                            <p className="text-2xl font-black text-[#071d41]">
+                                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                                                    listaConsumos.filter(c => c.usuarioId === parseInt(colaboradorConsumo)).reduce((a, b) => a + b.valor, 0)
+                                                )}
+                                            </p>
+                                        </div>
+                                        <p className="text-xs text-gray-400 max-w-xs text-right hidden md:block">
+                                            Itens mais antigos que 15 dias são removidos automaticamente.
+                                        </p>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {listaConsumos.filter(c => c.usuarioId === parseInt(colaboradorConsumo)).map(item => (
+                                            <div key={item.id} className="bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition flex gap-4">
+                                                <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                    {item.imagemUrl ? <img src={item.imagemUrl} alt="Item" className="w-full h-full object-cover" /> : <ImageIcon size={24} className="text-gray-300" />}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <h4 className="font-bold text-gray-800">{item.nomeItem}</h4>
+                                                    <p className="text-sm text-green-600 font-bold">R$ {item.valor.toFixed(2).replace('.', ',')}</p>
+                                                    <p className="text-[10px] text-gray-400 mt-1">{new Date(item.data).toLocaleDateString('pt-BR')}</p>
+                                                </div>
+                                                <div className="flex flex-col justify-between">
+                                                    <button onClick={() => abrirModalEdicaoConsumo(item)} className="text-blue-400 hover:text-blue-600"><Edit3 size={16}/></button>
+                                                    <button onClick={() => handleExcluirConsumo(item.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                             ) : (
+                                 <div className="text-center p-10 text-gray-400 bg-gray-50 rounded border-2 border-dashed">Selecione um funcionário acima.</div>
+                             )}
+                        </div>
+                    </div>
+                )}
+
+                {/* 4. FOLHA DE PONTO DETALHADA */}
                 {relatorioDetalhado && (
                     <div className="bg-white p-8 max-w-4xl mx-auto shadow-lg print:shadow-none print:w-full animate-fade-in">
-                        {/* Header da Folha */}
-                        <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-6">
-                            <div>
-                                <h1 className="text-2xl font-black text-gray-900 uppercase tracking-wide">Pinguim Manoa</h1>
-                                <p className="text-sm text-gray-500 font-bold">Folha de Ponto Individual</p>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-sm font-bold text-gray-900">Período: {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mesRelatorio]} / {anoRelatorio}</p>
-                                <p className="text-xs text-gray-400">Gerado em: {new Date().toLocaleString('pt-BR')}</p>
-                            </div>
+                        <div className="flex justify-between border-b-2 border-black pb-4 mb-6">
+                            <div><h1 className="text-2xl font-black uppercase">Pinguim Manoa</h1><p>Folha de Ponto Individual</p></div>
+                            <div className="text-right"><p className="font-bold">Mês: {mesRelatorio+1}/{anoRelatorio}</p></div>
                         </div>
-
-                        {/* Dados do Colaborador */}
-                        <div className="mb-6 bg-gray-50 p-4 rounded border border-gray-200 print:bg-transparent print:border-gray-300">
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div><span className="font-bold text-gray-600">Colaborador:</span> <span className="text-gray-900 uppercase ml-2">{relatorioDetalhado.nome}</span></div>
-                                <div><span className="font-bold text-gray-600">Cargo:</span> <span className="text-gray-900 uppercase ml-2">{relatorioDetalhado.cargo || "Não informado"}</span></div>
-                                <div><span className="font-bold text-gray-600">Email:</span> <span className="text-gray-900 ml-2">{relatorioDetalhado.email}</span></div>
-                                <div><span className="font-bold text-gray-600">Saldo do Mês:</span> <span className={`font-bold ml-2 ${relatorioDetalhado.saldoMinutos >= 0 ? "text-green-700" : "text-red-700"}`}>{formatarSaldo(relatorioDetalhado.saldoMinutos)}</span></div>
-                            </div>
+                        <div className="grid grid-cols-2 gap-4 mb-6 text-sm bg-gray-50 p-4 border print:bg-white print:border-black">
+                            <p><strong>Nome:</strong> {relatorioDetalhado.nome}</p>
+                            <p><strong>Cargo:</strong> {relatorioDetalhado.cargo}</p>
+                            <p><strong>Saldo:</strong> {formatarSaldo(relatorioDetalhado.saldoMinutos)}</p>
                         </div>
-
-                        {/* Tabela de Dias */}
-                        <table className="w-full text-xs md:text-sm border-collapse border border-gray-300 mb-8">
-                            <thead className="bg-gray-100 print:bg-gray-200 text-gray-800 font-bold uppercase">
-                                <tr>
-                                    <th className="border border-gray-300 p-2 text-left">Data</th>
-                                    <th className="border border-gray-300 p-2 text-center">Entrada</th>
-                                    <th className="border border-gray-300 p-2 text-center">Saída</th>
-                                    <th className="border border-gray-300 p-2 text-center">H. Trab</th>
-                                    <th className="border border-gray-300 p-2 text-center">Saldo</th>
-                                    <th className="border border-gray-300 p-2 text-center">Situação</th>
-                                </tr>
+                        <table className="w-full text-xs border-collapse border border-black mb-8">
+                            <thead className="bg-gray-200 font-bold uppercase print:bg-gray-100">
+                                <tr><th className="border border-black p-1 text-left">Data</th><th className="border border-black p-1 text-center">Entrada</th><th className="border border-black p-1 text-center">Saída</th><th className="border border-black p-1 text-center">Saldo</th><th className="border border-black p-1 text-center">Situação</th></tr>
                             </thead>
                             <tbody>
                                 {gerarDiasDoMesParaRelatorio(mesRelatorio, anoRelatorio, pontosGerais.filter(p=>p.usuarioId === relatorioDetalhado.id), folgasGerais.filter(f=>f.usuarioId === relatorioDetalhado.id)).map((dia, idx) => (
@@ -954,101 +905,37 @@ export default function AdminPage() {
                                         <td className="border border-black p-1">{dia.dataFormatada}</td>
                                         <td className="border border-black p-1 text-center">{dia.entrada}</td>
                                         <td className="border border-black p-1 text-center">{dia.saida}</td>
-                                        <td className="border border-black p-1 text-center font-mono">{dia.horasTrabalhadas}</td>
-                                        <td className={`border border-black p-1 text-center font-bold ${dia.saldo === '00:00' || dia.saldoPositivo ? 'text-green-700' : 'text-red-600'}`}>{dia.saldo}</td>
+                                        <td className={`border border-black p-1 text-center font-bold ${dia.saldo==='00:00'||dia.saldoPositivo?'text-green-700':'text-red-600'}`}>{dia.saldo}</td>
                                         <td className="border border-black p-1 text-center">{dia.status}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
-
-                        {/* Assinaturas */}
                         <div className="mt-16 grid grid-cols-2 gap-20 print:gap-10 page-break-inside-avoid">
-                            <div className="text-center">
-                                <div className="border-t border-black pt-2"></div>
-                                <p className="text-sm font-bold uppercase">Pinguim Manoa</p>
-                                <p className="text-xs text-gray-500">Empregador</p>
-                            </div>
-                            <div className="text-center">
-                                <div className="border-t border-black pt-2"></div>
-                                <p className="text-sm font-bold uppercase">{relatorioDetalhado.nome}</p>
-                                <p className="text-xs text-gray-500">Colaborador</p>
-                            </div>
+                            <div className="text-center"><div className="border-t border-black pt-2"></div><p className="text-sm font-bold">Empregador</p></div>
+                            <div className="text-center"><div className="border-t border-black pt-2"></div><p className="text-sm font-bold">Colaborador</p></div>
                         </div>
-
-                        {/* Botões de Controle (Somem na impressão) */}
-                        <div className="mt-8 flex flex-col md:flex-row justify-center gap-4 print:hidden">
-                            <button onClick={() => setRelatorioDetalhado(null)} className="px-6 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center justify-center gap-2 transition">
-                                <ArrowLeft size={18}/> Voltar
-                            </button>
-                            
-                            {/* BOTÃO DE ENVIAR EMAIL */}
-                            <button onClick={() => handleEnviarEmailRelatorio(relatorioDetalhado)} className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg transition">
-                                <Mail size={18}/> Enviar por E-mail
-                            </button>
-
-                            {/* BOTÃO DE IMPRIMIR */}
-                            <button onClick={() => window.print()} className="px-6 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg transition">
-                                <Printer size={18}/> Imprimir Folha
-                            </button>
+                        <div className="mt-8 flex justify-center gap-4 print:hidden">
+                            <button onClick={()=>setRelatorioDetalhado(null)} className="px-4 py-2 border rounded hover:bg-gray-100 flex gap-2"><ArrowLeft size={16}/> Voltar</button>
+                            <button onClick={()=>handleEnviarEmailRelatorio(relatorioDetalhado)} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex gap-2 shadow"><Mail size={16}/> Enviar Email</button>
+                            <button onClick={()=>window.print()} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex gap-2 shadow"><Printer size={16}/> Imprimir</button>
                         </div>
                     </div>
                 )}
 
-                {/* 4. EDIÇÃO HISTÓRICO (DASHBOARD) */}
+                {/* 5. EDIÇÃO HISTÓRICO */}
                 {usuarioSelecionado && (
-                    <div className="animate-fade-in space-y-6 print:hidden">
+                    <div className="space-y-6 print:hidden">
                         <div className="flex justify-between items-center">
-                            <button onClick={() => setUsuarioSelecionado(null)} className="text-sm text-gray-500 hover:text-[#1351b4] flex items-center gap-1 font-bold transition">
-                                <ChevronDown size={16} className="rotate-90"/> Voltar para Lista
-                            </button>
+                            <button onClick={()=>setUsuarioSelecionado(null)} className="flex items-center text-sm font-bold text-gray-500 hover:text-blue-600"><ChevronDown className="rotate-90 mr-1"/> Voltar</button>
                             <div className="flex gap-2">
-                                <button 
-                                    onClick={() => toggleStatusUsuario(usuarioSelecionado)}
-                                    className={`px-4 py-2 rounded text-sm font-bold flex items-center gap-2 transition shadow-sm ${usuarioSelecionado.status === 'ativo' ? 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200'}`}
-                                >
-                                    {usuarioSelecionado.status === 'ativo' ? <><Lock size={16}/> Bloquear Acesso</> : <><Unlock size={16}/> Desbloquear Acesso</>}
-                                </button>
+                                <button onClick={()=>toggleStatusUsuario(usuarioSelecionado)} className={`px-4 py-2 rounded text-sm font-bold ${usuarioSelecionado.status==='ativo'?'bg-red-100 text-red-700':'bg-green-100 text-green-700'}`}>{usuarioSelecionado.status==='ativo'?'Bloquear':'Desbloquear'}</button>
                             </div>
                         </div>
-
-                        {/* Card Info Usuário */}
-                        <div className="bg-white p-6 rounded shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-2xl font-bold">
-                                    {usuarioSelecionado.nome.charAt(0)}
-                                </div>
-                                <div>
-                                    <h2 className="text-2xl font-bold text-[#071d41]">{usuarioSelecionado.nome}</h2>
-                                    <div className="text-gray-500 text-sm flex gap-2">
-                                        <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">{usuarioSelecionado.cargo}</span>
-                                    </div>
-                                    <p className="text-gray-400 text-xs mt-1">{usuarioSelecionado.email || "Sem e-mail cadastrado"}</p>
-                                </div>
-                            </div>
-                            
-                            <div className="text-right bg-gray-50 p-3 rounded border border-gray-100">
-                                <div className="flex gap-2 mb-2 justify-end">
-                                     <select value={mesFicha} onChange={e => setMesFicha(Number(e.target.value))} className="border p-1 rounded text-xs outline-none bg-white">
-                                         {["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"].map((m,i) => <option key={i} value={i}>{m}</option>)}
-                                     </select>
-                                     <select value={anoFicha} onChange={e => setAnoFicha(Number(e.target.value))} className="border p-1 rounded text-xs outline-none bg-white">
-                                         {Array.from({length: 5}, (_,i) => 2026 + i).map(a => <option key={a} value={a}>{a}</option>)}
-                                     </select>
-                                </div>
-                                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Visualizando Espelho</p>
-                            </div>
-                        </div>
-
-                        {/* Acordeão de Histórico */}
-                        <div className="bg-white rounded shadow-sm border border-gray-200">
-                             <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                                <span className="font-bold text-[#071d41] flex items-center gap-2"><Calendar size={18}/> Histórico Detalhado</span>
-                                <span className="text-xs text-gray-400">Clique para editar ou marcar folga</span>
-                             </div>
-                             
-                             <div className="divide-y divide-gray-100">
-                                {gerarDiasDoMesSelecionado(mesFicha, anoFicha, pontosGerais.filter(p => p.usuarioId === usuarioSelecionado.id)).map((dia, idx) => (
+                        <div className="bg-white rounded shadow-sm border overflow-hidden">
+                            <div className="p-4 bg-gray-50 font-bold border-b text-[#071d41]">Histórico Detalhado</div>
+                            <div className="divide-y">
+                                {gerarDiasDoMesSelecionado(mesFicha, anoFicha, pontosGerais.filter(p=>p.usuarioId === usuarioSelecionado.id)).map((dia, idx) => (
                                     <ItemDiaAdmin 
                                         key={idx} 
                                         dia={dia} 
@@ -1059,595 +946,187 @@ export default function AdminPage() {
                                         onUpdate={carregarDados}
                                     />
                                 ))}
-                             </div>
+                            </div>
                         </div>
                     </div>
                 )}
             </>
         )}
-
       </main>
 
-      {/* MODAL PERFIL ADMIN */}
+      {/* MODAIS (ADMIN, NOVO, EDITAR) */}
       {modalPerfilAdmin && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
-              <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in border-t-4 border-blue-500">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-lg font-bold text-[#071d41] flex items-center gap-2">
-                          <Edit3 size={18} className="text-blue-500"/> Dados do Admin
-                      </h3>
-                      <button onClick={() => setModalPerfilAdmin(false)} className="text-gray-400 hover:text-red-500"><X/></button>
-                  </div>
-                  <div className="space-y-4">
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">Nome de Exibição</label>
-                          <input className="w-full border p-2.5 rounded outline-none focus:border-blue-500" value={adminParaEditar.nome} onChange={e => setAdminParaEditar({...adminParaEditar, nome: e.target.value})} />
-                      </div>
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">E-mail para Relatórios</label>
-                          <input className="w-full border p-2.5 rounded outline-none focus:border-blue-500" value={adminParaEditar.email} onChange={e => setAdminParaEditar({...adminParaEditar, email: e.target.value})} />
-                      </div>
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">Cargo / Função</label>
-                          <input className="w-full border p-2.5 rounded outline-none focus:border-blue-500" value={adminParaEditar.cargo} onChange={e => setAdminParaEditar({...adminParaEditar, cargo: e.target.value})} />
-                      </div>
-                      <button onClick={salvarPerfilAdmin} className="w-full bg-blue-600 text-white font-bold py-3 rounded mt-2 hover:bg-blue-700 shadow-md transition">
-                          ATUALIZAR PERFIL
-                      </button>
-                  </div>
+              <div className="bg-white p-6 rounded shadow w-full max-w-sm">
+                  <h3 className="font-bold text-lg mb-4">Editar Admin</h3>
+                  <input className="w-full border p-2 mb-2 rounded" placeholder="Nome" value={adminParaEditar.nome} onChange={e=>setAdminParaEditar({...adminParaEditar, nome:e.target.value})} />
+                  <input className="w-full border p-2 mb-2 rounded" placeholder="Email" value={adminParaEditar.email} onChange={e=>setAdminParaEditar({...adminParaEditar, email:e.target.value})} />
+                  <input className="w-full border p-2 mb-2 rounded" placeholder="Cargo" value={adminParaEditar.cargo} onChange={e=>setAdminParaEditar({...adminParaEditar, cargo:e.target.value})} />
+                  <div className="flex gap-2 justify-end mt-2"><button onClick={()=>setModalPerfilAdmin(false)} className="text-gray-500 px-4">Cancelar</button><button onClick={salvarPerfilAdmin} className="bg-blue-600 text-white px-4 py-2 rounded">Salvar</button></div>
               </div>
           </div>
       )}
-
-      {/* MODAL NOVO USUÁRIO (SEM CPF) */}
       {modalNovoUsuario && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
-              <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in">
-                  <div className="flex justify-between items-center mb-6 border-b pb-2">
-                      <h3 className="text-lg font-bold text-[#071d41]">Cadastrar Colaborador</h3>
-                      <button onClick={() => setModalNovoUsuario(false)} className="text-gray-400 hover:text-red-500"><X/></button>
-                  </div>
-                  <div className="space-y-4">
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
-                          <input placeholder="Ex: João Silva" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.nome} onChange={e => setNovoUser({...novoUser, nome: e.target.value})} />
-                      </div>
-                      {/* CAMPO CPF REMOVIDO */}
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">E-mail (Login)</label>
-                          <input placeholder="email@exemplo.com" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.email} onChange={e => setNovoUser({...novoUser, email: e.target.value})} />
-                      </div>
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">Cargo</label>
-                          <input placeholder="Ex: Vendedor" className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={novoUser.cargo} onChange={e => setNovoUser({...novoUser, cargo: e.target.value})} />
-                      </div>
-                      
-                      <div className="bg-blue-50 p-3 rounded text-xs text-blue-800 flex items-start gap-2 mt-2">
-                        <AlertCircle size={14} className="mt-0.5 min-w-[14px]"/>
-                        <p>O usuário será criado com a senha padrão <strong>123</strong> (ou pinguim) e deverá trocá-la no primeiro acesso.</p>
-                      </div>
-
-                      <button onClick={handleNovoUsuario} className="w-full bg-[#1351b4] text-white font-bold py-3 rounded mt-2 hover:bg-blue-800 transition shadow-lg">CADASTRAR</button>
-                  </div>
+              <div className="bg-white p-6 rounded shadow w-full max-w-sm">
+                  <h3 className="font-bold text-lg mb-4">Novo Colaborador</h3>
+                  <input className="w-full border p-2 mb-2 rounded" placeholder="Nome" value={novoUser.nome} onChange={e=>setNovoUser({...novoUser, nome:e.target.value})}/>
+                  <input className="w-full border p-2 mb-2 rounded" placeholder="Email" value={novoUser.email} onChange={e=>setNovoUser({...novoUser, email:e.target.value})}/>
+                  <input className="w-full border p-2 mb-2 rounded" placeholder="Cargo" value={novoUser.cargo} onChange={e=>setNovoUser({...novoUser, cargo:e.target.value})}/>
+                  <button onClick={handleNovoUsuario} className="w-full bg-[#1351b4] text-white py-2 rounded mt-2">Cadastrar</button>
+                  <button onClick={()=>setModalNovoUsuario(false)} className="w-full text-gray-500 py-2 mt-1">Cancelar</button>
               </div>
           </div>
       )}
-
-      {/* MODAL EDITAR USUÁRIO (SEM CPF) */}
       {modalEditarUsuario && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
-              <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm border-t-4 border-orange-500">
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-lg font-bold text-[#071d41] flex items-center gap-2"><Edit3 size={20} className="text-orange-500"/> Editar Dados</h3>
-                      <button onClick={() => setModalEditarUsuario(false)} className="text-gray-400 hover:text-red-500"><X/></button>
-                  </div>
+              <div className="bg-white p-6 rounded shadow w-full max-w-sm border-t-4 border-orange-500">
+                  <h3 className="font-bold text-lg mb-4">Editar Usuário</h3>
+                  <input className="w-full border p-2 mb-2 rounded" value={usuarioParaEditar.nome} onChange={e=>setUsuarioParaEditar({...usuarioParaEditar, nome:e.target.value})}/>
+                  <input className="w-full border p-2 mb-2 rounded" value={usuarioParaEditar.email} onChange={e=>setUsuarioParaEditar({...usuarioParaEditar, email:e.target.value})}/>
+                  <input className="w-full border p-2 mb-2 rounded" value={usuarioParaEditar.cargo} onChange={e=>setUsuarioParaEditar({...usuarioParaEditar, cargo:e.target.value})}/>
+                  <button onClick={handleSalvarEdicao} className="w-full bg-orange-500 text-white py-2 rounded mt-2">Salvar</button>
+                  <button onClick={()=>setModalEditarUsuario(false)} className="w-full text-gray-500 py-2 mt-1">Cancelar</button>
+              </div>
+          </div>
+      )}
+      {modalNovoConsumo && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
+              <div className="bg-white p-6 rounded shadow w-full max-w-sm animate-scale-in">
+                  <h3 className="font-bold text-lg mb-4">{consumoEditando ? "Editar Item" : "Novo Item"}</h3>
                   <div className="space-y-4">
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">Nome Completo</label>
-                          <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.nome} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, nome: e.target.value})} />
-                      </div>
-                      {/* CAMPO CPF REMOVIDO */}
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">E-mail</label>
-                          <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.email} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, email: e.target.value})} />
-                      </div>
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">Cargo</label>
-                          <input className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none" value={usuarioParaEditar.cargo} onChange={e => setUsuarioParaEditar({...usuarioParaEditar, cargo: e.target.value})} />
-                      </div>
-                      
-                      <button onClick={handleSalvarEdicao} className="w-full bg-orange-500 text-white font-bold py-3 rounded mt-2 hover:bg-orange-600 flex items-center justify-center gap-2 transition shadow-lg">
-                          <Save size={18}/> SALVAR ALTERAÇÕES
-                      </button>
+                      <input placeholder="Nome do Item" className="w-full border p-2 rounded" value={novoConsumo.nomeItem} onChange={e=>setNovoConsumo({...novoConsumo, nomeItem:e.target.value})} />
+                      <div className="relative"><DollarSign size={16} className="absolute left-2 top-3 text-gray-400"/><input type="number" step="0.01" placeholder="0.00" className="w-full border p-2 pl-8 rounded" value={novoConsumo.valor} onChange={e=>setNovoConsumo({...novoConsumo, valor:e.target.value})} /></div>
+                      <input placeholder="URL da Imagem (Opcional)" className="w-full border p-2 rounded" value={novoConsumo.imagemUrl} onChange={e=>setNovoConsumo({...novoConsumo, imagemUrl:e.target.value})} />
+                      <button onClick={handleSalvarConsumo} className="w-full bg-[#1351b4] text-white py-2 rounded">Salvar</button>
+                      <button onClick={()=>setModalNovoConsumo(false)} className="w-full text-gray-500 py-2">Cancelar</button>
                   </div>
               </div>
           </div>
       )}
-
     </div>
   );
 }
 
-// ==========================================================
-// FUNÇÕES AUXILIARES E COMPONENTES
-// ==========================================================
+// ==================== HELPERS ====================
 
-// Helper Específico para a Folha de Ponto Impressa (Lógica Completa)
-function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
-    const dias = [];
-    const ultimoDia = new Date(ano, mes + 1, 0).getDate();
-    
-    for (let i = 1; i <= ultimoDia; i++) {
-        const data = new Date(ano, mes, i);
-        const dataStr = data.toLocaleDateString('pt-BR');
-        const dataIso = data.toISOString().split('T')[0];
-        const diaSemana = data.toLocaleDateString('pt-BR', {weekday: 'short'}).replace('.', '').toUpperCase();
-        
-        // Verifica se é folga
-        const isFolga = folgas.some(f => f.dataIso === dataIso);
-
-        const pontosDia = pontos.filter(p => new Date(p.data).toLocaleDateString('pt-BR') === dataStr);
-        const entrada = pontosDia.find(p => p.tipo === 'Entrada');
-        const saida = pontosDia.filter(p => p.tipo === 'Saída').pop();
-
-        let entradaStr = "--:--";
-        let saidaStr = "--:--";
-        let horasTrabalhadas = "00:00";
-        let saldo = "00:00";
-        let status = "AUSÊNCIA / FOLGA";
-        let saldoPositivo = true;
-
-        if (isFolga) {
-            status = "FOLGA";
-            saldo = "00:00"; 
-            saldoPositivo = true;
-        } else if (entrada) {
-            entradaStr = new Date(entrada.data).toLocaleTimeString('pt-BR').slice(0,5);
-            status = "PRESENÇA";
-            
-            if (saida) {
-                saidaStr = new Date(saida.data).toLocaleTimeString('pt-BR').slice(0,5);
-                let dtEntrada = new Date(entrada.data);
-                let dtSaida = new Date(saida.data);
-                if (dtSaida < dtEntrada) dtSaida.setDate(dtSaida.getDate() + 1);
-
-                const diff = dtSaida - dtEntrada; // ms trabalhados
-                const hTrab = Math.floor(diff / 3600000);
-                const mTrab = Math.floor((diff % 3600000) / 60000);
-                horasTrabalhadas = `${String(hTrab).padStart(2,'0')}:${String(mTrab).padStart(2,'0')}`;
-
-                const meta = 8 * 3600000;
-                const saldoMs = diff - meta;
-                
-                // CORREÇÃO: Tolerância para 00:00 ser verde
-                if (Math.abs(saldoMs) < 60000) {
-                    saldo = "00:00";
-                    saldoPositivo = true; 
-                } else {
-                    saldoPositivo = saldoMs >= 0;
-                    const hSaldo = Math.floor(Math.abs(saldoMs) / 3600000);
-                    const mSaldo = Math.floor((Math.abs(saldoMs) % 3600000) / 60000);
-                    saldo = `${saldoPositivo ? '+' : '-'}${String(hSaldo).padStart(2,'0')}:${String(mSaldo).padStart(2,'0')}`;
-                }
-
-            } else {
-                saldo = "-08:00"; saldoPositivo = false;
-            }
-        } else {
-            // Verificar se o dia já passou
-            if (data < new Date()) {
-                saldo = "-08:00"; 
-                saldoPositivo = false;
-                status = "AUSÊNCIA";
-            } else {
-                saldo = ""; 
-                status = ""; // Dia futuro
-            }
-        }
-
-        dias.push({
-            dataIso,
-            dataFormatada: dataStr,
-            diaNum: String(i).padStart(2,'0'),
-            diaSemana,
-            entrada: entradaStr,
-            saida: saidaStr,
-            horasTrabalhadas,
-            saldo,
-            saldoPositivo,
-            status
-        });
-    }
-    return dias;
-}
-
-// --- COMPONENTE DE LINHA DO DIA (AGORA COM PODERES DE EDIÇÃO) ---
 function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate }) {
     const [aberto, setAberto] = useState(false);
-    
-    // Estados para Edição/Criação
+    const [novoPonto, setNovoPonto] = useState({ hora: "08:00", tipo: "Entrada" });
+    const [adicionando, setAdicionando] = useState(false);
     const [editandoId, setEditandoId] = useState(null);
     const [editValues, setEditValues] = useState({ hora: "", tipo: "" });
-    const [adicionando, setAdicionando] = useState(false);
-    const [novoPonto, setNovoPonto] = useState({ hora: "08:00", tipo: "Entrada" });
 
-    // === CÁLCULO DE SALDO (Com Correção de Madrugada e Folga) ===
-    let saldoStr = "00:00";
-    let saldoPositivo = true;
-    let statusDia = "AUSÊNCIA";
-    
-    // Se for marcado como folga
-    if (isFolga) {
-        statusDia = "FOLGA";
-    } else {
-        const primeiraEntrada = dia.pontos.find(p => p.tipo === 'Entrada');
-        const ultimaSaida = dia.pontos.filter(p => p.tipo === 'Saída').pop();
-
-        if (primeiraEntrada) {
-            statusDia = "PRESENÇA";
-            if (ultimaSaida) {
-                let dtEntrada = new Date(primeiraEntrada.data);
-                let dtSaida = new Date(ultimaSaida.data);
-
-                if (dtSaida < dtEntrada) {
-                    dtSaida.setDate(dtSaida.getDate() + 1);
-                }
-
-                const diff = dtSaida - dtEntrada;
-                const meta = 8 * 60 * 60 * 1000; 
-                const saldoMs = diff - meta;
-                
-                // CORREÇÃO NO ITEM VISUAL
-                if (Math.abs(saldoMs) < 60000) {
-                    saldoPositivo = true;
-                    saldoStr = "00:00";
-                } else {
-                    saldoPositivo = saldoMs >= 0;
-                    const h = Math.floor(Math.abs(saldoMs) / 3600000);
-                    const m = Math.floor((Math.abs(saldoMs) % 3600000) / 60000);
-                    saldoStr = `${saldoPositivo ? '+' : '-'}${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-                }
-            } else {
-                saldoStr = "-08:00";
-                saldoPositivo = false;
-            }
-        } else {
-             saldoStr = "-08:00";
-             saldoPositivo = false;
-        }
-    }
-
-    // --- AÇÕES DO ADMIN ---
-
-    // 1. Excluir Ponto
-    async function handleExcluir(id) {
-        if (!confirm("Tem certeza que deseja apagar este registro?")) return;
-        try {
-            const res = await fetch(`/api/ponto?id=${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                toast.success("Registro apagado.");
-                onUpdate(); // Atualiza a tela
-            }
-        } catch (e) { toast.error("Erro ao excluir."); }
-    }
-
-    // 2. Iniciar Edição (Abre os inputs na linha)
-    function iniciarEdicao(ponto) {
-        const dataObj = new Date(ponto.data);
-        const horaFormatada = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        setEditValues({ hora: horaFormatada, tipo: ponto.tipo });
-        setEditandoId(ponto.id);
-    }
-
-    // 3. Salvar Edição
-    async function salvarEdicao(idOriginal, dataOriginal) {
-        try {
-            const dataBase = new Date(dataOriginal);
-            const [h, m] = editValues.hora.split(':');
-            dataBase.setHours(parseInt(h), parseInt(m));
-
-            const res = await fetch('/api/ponto', {
-                method: 'PUT',
-                body: JSON.stringify({ 
-                    id: idOriginal, 
-                    novaData: dataBase.toISOString(), 
-                    novoTipo: editValues.tipo 
-                })
-            });
-            
-            if (res.ok) {
-                toast.success("Ponto atualizado!");
-                setEditandoId(null);
-                onUpdate();
-            }
-        } catch (e) { toast.error("Erro ao salvar."); }
-    }
-
-    // 4. Salvar Novo Ponto Manual (Essa é a mágica do Admin)
+    async function handleExcluir(id) { if(confirm("Apagar?")) { await fetch(`/api/ponto?id=${id}`, { method: 'DELETE' }); onUpdate(); } }
     async function salvarNovoPonto() {
-        try {
-            // Pega a data do dia que estamos vendo (YYYY-MM-DD)
-            const [ano, mes, diaMes] = dia.dataIso.split('-');
-            const dataFinal = new Date(ano, mes - 1, diaMes);
-            const [h, m] = novoPonto.hora.split(':');
-            dataFinal.setHours(parseInt(h), parseInt(m));
-
-            const res = await fetch('/api/ponto', {
-                method: 'POST',
-                body: JSON.stringify({
-                    modoAdmin: true, 
-                    usuarioId: usuarioId,
-                    tipo: novoPonto.tipo,
-                    dataManual: dataFinal.toISOString()
-                })
-            });
-
-            if (res.ok) {
-                toast.success("Ponto adicionado!");
-                setAdicionando(false);
-                onUpdate();
-            }
-        } catch (e) { toast.error("Erro ao criar ponto."); }
+        const [ano, mes, diaMes] = dia.dataIso.split('-');
+        const dataFinal = new Date(ano, mes - 1, diaMes);
+        const [h, m] = novoPonto.hora.split(':');
+        dataFinal.setHours(parseInt(h), parseInt(m));
+        await fetch('/api/ponto', { method: 'POST', body: JSON.stringify({ modoAdmin: true, usuarioId, tipo: novoPonto.tipo, dataManual: dataFinal.toISOString() }) });
+        setAdicionando(false); onUpdate();
     }
-
-    // 5. Alternar Folga
+    async function salvarEdicao(idOriginal, dataOriginal) {
+        const dataBase = new Date(dataOriginal);
+        const [h, m] = editValues.hora.split(':');
+        dataBase.setHours(parseInt(h), parseInt(m));
+        await fetch('/api/ponto', { method: 'PUT', body: JSON.stringify({ id: idOriginal, novaData: dataBase.toISOString(), novoTipo: editValues.tipo }) });
+        setEditandoId(null); onUpdate();
+    }
     async function toggleFolga() {
-        try {
-            await fetch('/api/folgas', {
-                method: 'POST',
-                body: JSON.stringify({ usuarioId, dataIso: dia.dataIso })
-            });
-            onUpdate(); // Atualiza para recalcular
-            toast.success(isFolga ? "Folga removida!" : "Folga definida!");
-        } catch(e) { toast.error("Erro ao definir folga."); }
+        await fetch('/api/folgas', { method: 'POST', body: JSON.stringify({ usuarioId, dataIso: dia.dataIso }) });
+        onUpdate();
     }
-
+    const isPos = dia.saldoPositivo || dia.saldo === '00:00';
+    
     return (
         <div className="border-b border-gray-100 last:border-0">
-            <div 
-                className={`flex items-center justify-between p-4 hover:bg-gray-50 transition cursor-pointer ${isFolga ? 'bg-blue-50/70' : aberto ? 'bg-blue-50/30' : ''}`}
-                onClick={() => setAberto(!aberto)}
-            >
-                <div className="flex flex-col flex-1">
+            <div className={`flex items-center justify-between p-4 hover:bg-gray-50 cursor-pointer ${isFolga ? 'bg-blue-50/70' : aberto ? 'bg-blue-50/30' : ''}`} onClick={()=>setAberto(!aberto)}>
+                <div>
                     <span className="font-bold text-sm text-[#071d41]">{dia.dataFormatada}</span>
-                    
-                    {/* VISUAL STATUS DO DIA */}
                     <div className="flex gap-2 mt-1">
-                        <span className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase 
-                            ${statusDia === 'PRESENÇA' ? 'bg-green-100 text-green-700 border-green-200' : 
-                              statusDia === 'FOLGA' ? 'bg-blue-100 text-blue-700 border-blue-200' : 
-                              'bg-red-50 text-red-500 border-red-200'}`}>
-                            {statusDia}
-                        </span>
-                        
-                        {/* Mostra saldo se não for folga ou se tiver ponto mesmo na folga */}
-                        {statusDia !== 'FOLGA' && (
-                            <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${saldoPositivo ? 'bg-green-50 text-green-600 border-green-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
-                                Saldo: {saldoStr}
-                            </span>
-                        )}
+                        <span className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase ${dia.status === 'PRESENÇA' ? 'bg-green-100 text-green-700' : (dia.status === 'FOLGA' ? 'bg-blue-100 text-blue-700' : 'bg-red-50 text-red-500')}`}>{dia.status}</span>
+                        {dia.status !== 'FOLGA' && dia.saldo && <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${isPos ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>Saldo: {dia.saldo}</span>}
                     </div>
                 </div>
-                
                 <div className="flex items-center gap-3">
-                    {/* BALÃO DE MENSAGEM */}
-                    {mensagem && (
-                         <div className="bg-blue-100 text-blue-600 p-1.5 rounded-full" title="Possui Justificativa">
-                             <MessageCircle size={14} />
-                         </div>
-                    )}
-                    <div className="cursor-pointer text-gray-400 hover:text-blue-600">
-                        {aberto ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                    </div>
+                    {mensagem && <MessageCircle size={16} className="text-blue-500"/>}
+                    {aberto ? <ChevronUp size={20} className="text-gray-400"/> : <ChevronDown size={20} className="text-gray-400"/>}
                 </div>
             </div>
-            
             {aberto && (
-                <div className="bg-gray-50 p-4 pl-4 md:pl-8 animate-fade-in border-t border-gray-100 shadow-inner text-sm">
-                    
-                    {/* BARRA DE AÇÕES DO DIA */}
-                    <div className="flex flex-wrap gap-2 mb-4">
-                        <button 
-                            onClick={() => setAdicionando(!adicionando)} 
-                            className="bg-green-100 text-green-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-green-200 flex items-center gap-1 shadow-sm transition"
-                        >
-                            <PlusCircle size={14}/> {adicionando ? 'Cancelar Adição' : 'Adicionar Ponto'}
-                        </button>
-                        
-                        {/* BOTÃO DE FOLGA INTELIGENTE */}
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); toggleFolga(); }}
-                            className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition 
-                                ${isFolga ? 'bg-gray-200 text-gray-600 hover:bg-gray-300' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}
-                        >
-                            {isFolga ? <><X size={14}/> Remover Folga</> : <><Coffee size={14}/> Definir Folga</>}
-                        </button>
+                <div className="bg-gray-50 p-4 pl-8 border-t border-gray-100 text-sm">
+                    <div className="flex gap-2 mb-4">
+                        <button onClick={()=>setAdicionando(!adicionando)} className="bg-green-100 text-green-700 px-3 py-1 rounded text-xs font-bold hover:bg-green-200 flex items-center gap-1"><PlusCircle size={14}/> Ponto</button>
+                        <button onClick={toggleFolga} className={`px-3 py-1 rounded text-xs font-bold flex items-center gap-1 ${isFolga ? 'bg-gray-200' : 'bg-blue-100 text-blue-700'}`}>{isFolga ? <><X size={14}/> Remover Folga</> : <><Coffee size={14}/> Definir Folga</>}</button>
                     </div>
-
-                    {/* FORMULÁRIO DE NOVO PONTO */}
-                    {adicionando && (
-                        <div className="bg-white border-l-4 border-green-500 p-3 rounded shadow-sm mb-4 flex flex-wrap items-center gap-2 animate-scale-in">
-                            <span className="text-xs font-bold text-green-700 uppercase mr-2">Novo:</span>
-                            <select 
-                                value={novoPonto.tipo} 
-                                onChange={e => setNovoPonto({...novoPonto, tipo: e.target.value})}
-                                className="border rounded p-1 text-sm outline-none focus:border-green-500"
-                            >
-                                <option>Entrada</option>
-                                <option>Ida Intervalo</option>
-                                <option>Volta Intervalo</option>
-                                <option>Saída</option>
-                            </select>
-                            <input 
-                                type="time" 
-                                value={novoPonto.hora} 
-                                onChange={e => setNovoPonto({...novoPonto, hora: e.target.value})}
-                                className="border rounded p-1 text-sm outline-none focus:border-green-500"
-                            />
-                            <div className="flex gap-1 ml-auto">
-                                <button onClick={salvarNovoPonto} className="bg-green-600 text-white p-1.5 rounded hover:bg-green-700 shadow"><Save size={16}/></button>
-                            </div>
+                    {adicionando && <div className="bg-white p-3 rounded border mb-3 flex gap-2 items-center"><select value={novoPonto.tipo} onChange={e=>setNovoPonto({...novoPonto, tipo:e.target.value})} className="border rounded p-1"><option>Entrada</option><option>Saída</option></select><input type="time" value={novoPonto.hora} onChange={e=>setNovoPonto({...novoPonto, hora:e.target.value})} className="border rounded p-1"/><button onClick={salvarNovoPonto} className="bg-green-600 text-white p-1 rounded"><Save size={16}/></button></div>}
+                    {mensagem && <div className="mb-2 p-2 bg-blue-50 text-blue-800 rounded border border-blue-100 italic">Justificativa: "{mensagem}"</div>}
+                    {pontosReais && pontosReais.length > 0 ? pontosReais.map(p => (
+                        <div key={p.id} className="flex justify-between items-center bg-white p-2 border rounded mb-1">
+                            {editandoId === p.id ? (
+                                <div className="flex gap-2 items-center"><select value={editValues.tipo} onChange={e=>setEditValues({...editValues, tipo:e.target.value})} className="border rounded p-1"><option>Entrada</option><option>Saída</option></select><input type="time" value={editValues.hora} onChange={e=>setEditValues({...editValues, hora:e.target.value})} className="border rounded p-1"/><button onClick={()=>salvarEdicao(p.id, p.data)}><Save size={16}/></button></div>
+                            ) : (
+                                <div className="flex gap-2 w-full justify-between items-center">
+                                    <div className="flex gap-2 items-center"><span className={`font-bold ${p.tipo==='Entrada'?'text-green-600':'text-red-600'}`}>{p.tipo}</span><span className="font-mono">{new Date(p.data).toLocaleTimeString('pt-BR').slice(0,5)}</span>{p.ip?.includes("Manual") && <span className="text-[10px] bg-yellow-100 px-1 rounded">Manual</span>}</div>
+                                    <div className="flex gap-2"><button onClick={()=>{setEditValues({ hora: new Date(p.data).toLocaleTimeString('pt-BR').slice(0,5), tipo: p.tipo }); setEditandoId(p.id);}}><Edit3 size={16}/></button><button onClick={()=>handleExcluir(p.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></div>
+                                </div>
+                            )}
                         </div>
-                    )}
-
-                    {mensagem && (
-                        <div className="mb-4 bg-white border border-blue-200 p-3 rounded-lg shadow-sm flex gap-3">
-                            <MessageCircle size={18} className="text-blue-500 mt-0.5"/>
-                            <div>
-                                <p className="text-xs font-bold text-blue-800 uppercase">Justificativa do Colaborador</p>
-                                <p className="text-sm text-gray-700 italic">"{mensagem}"</p>
-                            </div>
-                        </div>
-                    )}
-                    
-                    <div className="space-y-2">
-                        {/* AQUI USAMOS pontosReais PARA LISTAR OS PONTOS EXATOS DO DIA */}
-                        {pontosReais && pontosReais.length > 0 ? pontosReais.map((p) => (
-                            <div key={p.id} className="flex items-center justify-between text-sm bg-white p-2 px-3 rounded border border-gray-200 shadow-sm hover:shadow-md transition">
-                                
-                                {editandoId === p.id ? (
-                                    // === MODO EDIÇÃO (Inputs aparecem) ===
-                                    <div className="flex items-center gap-2 w-full animate-fade-in">
-                                        <select 
-                                            value={editValues.tipo} 
-                                            onChange={e => setEditValues({...editValues, tipo: e.target.value})}
-                                            className="border rounded p-1 text-xs font-bold"
-                                        >
-                                            <option>Entrada</option>
-                                            <option>Ida Intervalo</option>
-                                            <option>Volta Intervalo</option>
-                                            <option>Saída</option>
-                                        </select>
-                                        <input 
-                                            type="time" 
-                                            value={editValues.hora}
-                                            onChange={e => setEditValues({...editValues, hora: e.target.value})}
-                                            className="border rounded p-1 text-xs"
-                                        />
-                                        <div className="flex gap-1 ml-auto">
-                                            <button onClick={() => salvarEdicao(p.id, p.data)} className="bg-green-100 text-green-700 p-1 rounded hover:bg-green-200"><Save size={16}/></button>
-                                            <button onClick={() => setEditandoId(null)} className="bg-red-100 text-red-700 p-1 rounded hover:bg-red-200"><X size={16}/></button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    // === MODO VISUALIZAÇÃO ===
-                                    <>
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-2 h-2 rounded-full ${p.tipo === 'Entrada' ? 'bg-green-500' : p.tipo === 'Saída' ? 'bg-red-500' : 'bg-blue-500'}`}></div>
-                                            <span className={`font-bold w-24 ${p.tipo === 'Entrada' ? 'text-green-700' : p.tipo === 'Saída' ? 'text-red-700' : 'text-blue-700'}`}>
-                                                {p.tipo}
-                                            </span>
-                                            <span className="font-mono text-gray-700 font-bold text-base">
-                                                {new Date(p.data).toLocaleTimeString('pt-BR').slice(0,5)}
-                                            </span>
-                                            {/* Badge se for manual */}
-                                            {p.ip && p.ip.includes("Manual") && (
-                                                <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 rounded border border-yellow-200 font-bold hidden md:inline-block">MANUAL</span>
-                                            )}
-                                        </div>
-                                        <div className="flex gap-2 opacity-50 hover:opacity-100 transition">
-                                            <button 
-                                                onClick={() => iniciarEdicao(p)} 
-                                                className="text-blue-400 hover:text-blue-600 p-1.5 hover:bg-blue-50 rounded" 
-                                                title="Editar horário"
-                                            >
-                                                <Edit3 size={16}/>
-                                            </button>
-                                            <button 
-                                                onClick={() => handleExcluir(p.id)} 
-                                                className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded" 
-                                                title="Excluir registro"
-                                            >
-                                                <Trash2 size={16}/>
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        )) : <p className="text-sm text-gray-400 italic py-2">Sem registros de ponto.</p>}
-                    </div>
+                    )) : <p className="text-gray-400 italic">Sem registros de ponto.</p>}
                 </div>
             )}
         </div>
     )
 }
 
-function BotaoMenu({ icon, text, active, onClick }) {
-    return (
-        <div 
-            onClick={onClick} 
-            className={`flex items-center gap-3 p-3 rounded cursor-pointer transition select-none ${active ? 'bg-[#1351b4] text-white font-bold shadow-md' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}
-        >
-            {icon}
-            <span className="text-sm">{text}</span>
-        </div>
-    )
-}
-
-function CardResumo({ titulo, valor, icon, cor }) {
-    return (
-        <div className={`bg-white p-6 rounded shadow-sm border border-gray-200 flex items-center justify-between ${cor}`}>
-            <div>
-                <p className="text-gray-500 text-xs font-bold uppercase mb-1 tracking-wide">{titulo}</p>
-                <p className="text-3xl font-bold text-[#071d41]">{valor}</p>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-full border border-gray-100">
-                {icon}
-            </div>
-        </div>
-    )
-}
-
-function BadgeStatus({ status }) {
-    if (status === 'online') return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-            </span> 
-            ONLINE
-        </span>
-    )
-    if (status === 'pausa') return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-700 border border-orange-200">
-            <div className="w-2 h-2 bg-orange-500 rounded-full"></div> 
-            PAUSA
-        </span>
-    )
-    return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-500 border border-gray-200">
-            <div className="w-2 h-2 bg-gray-400 rounded-full"></div> 
-            OFF
-        </span>
-    )
-}
-
-function formatarSaldo(minutos) {
-    const abs = Math.abs(minutos);
-    const h = Math.floor(abs / 60);
-    const m = abs % 60;
-    const str = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-    return minutos >= 0 ? `+${str}` : `-${str}`;
-}
-
+function BotaoMenu({ icon, text, active, onClick }) { return <div onClick={onClick} className={`flex items-center gap-3 p-3 rounded cursor-pointer transition select-none ${active ? 'bg-[#1351b4] text-white font-bold' : 'text-gray-300 hover:text-white'}`}>{icon}<span className="text-sm">{text}</span></div> }
+function CardResumo({ titulo, valor, icon, cor }) { return <div className={`bg-white p-6 rounded shadow-sm border border-gray-200 flex items-center justify-between ${cor}`}><div><p className="text-gray-500 text-xs font-bold uppercase">{titulo}</p><p className="text-3xl font-bold text-[#071d41]">{valor}</p></div><div className="bg-gray-50 p-3 rounded-full">{icon}</div></div> }
+function BadgeStatus({ status }) { return status === 'online' ? <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">ONLINE</span> : <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-500">OFF</span> }
+function formatarSaldo(m) { const h = Math.floor(Math.abs(m)/60); const min = Math.abs(m)%60; return `${m>=0?'+':'-'}${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`; }
 function gerarDiasDoMesSelecionado(mes, ano, pontos) {
-    const dias = [];
-    const ultimoDia = new Date(ano, mes + 1, 0).getDate();
-    for (let i = 1; i <= ultimoDia; i++) {
-        const d = new Date(ano, mes, i);
-        const dataStr = d.toLocaleDateString('pt-BR');
-        const dataIso = d.toISOString().split('T')[0];
-        // Note: pontos aqui é o array filtrado já para o usuário, mas precisamos filtrar por dia também
-        // A filtragem real acontece dentro do map no componente pai ou aqui.
-        // Como o ItemDiaAdmin espera 'dia.pontos' (que não estamos usando mais lá dentro, pois passamos pontosReais), 
-        // vamos manter a estrutura básica de data.
-        
-        dias.push({ 
-            dataIso, 
-            dataFormatada: dataStr, 
-            diaSemana: d.toLocaleDateString('pt-BR', {weekday: 'long'}), 
-            pontos: [] // Placeholder, o ItemDiaAdmin recebe pontosReais agora para ser mais preciso
-        });
-    }
-    return dias.reverse(); // Mostra do dia 31 pro dia 1
+    const dias = []; const ultimo = new Date(ano, mes + 1, 0).getDate();
+    for (let i = 1; i <= ultimo; i++) {
+        const d = new Date(ano, mes, i); const str = d.toLocaleDateString('pt-BR'); const iso = d.toISOString().split('T')[0];
+        dias.push({ dataIso: iso, dataFormatada: str, diaSemana: d.toLocaleDateString('pt-BR',{weekday:'long'}), pontos: [] });
+    } return dias.reverse();
 }
+
+// CORREÇÃO DO CÁLCULO DE HORAS (00:00 = VERDE)
+function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
+    const dias = []; const ultimo = new Date(ano, mes + 1, 0).getDate();
+    for (let i = 1; i <= ultimo; i++) {
+        const d = new Date(ano, mes, i); const str = d.toLocaleDateString('pt-BR'); const iso = d.toISOString().split('T')[0];
+        const isFolga = folgas.some(f => f.dataIso === iso);
+        const pts = pontos.filter(p => new Date(p.data).toLocaleDateString('pt-BR') === str);
+        const ent = pts.find(p => p.tipo === 'Entrada'); const sai = pts.filter(p => p.tipo === 'Saída').pop();
+
+        let entS="--:--", saiS="--:--", horas="00:00", saldo="00:00", status="AUSÊNCIA", pos=false;
+
+        if (isFolga) { status="FOLGA"; saldo="00:00"; pos=true; }
+        else if (ent) {
+            entS = new Date(ent.data).toLocaleTimeString('pt-BR').slice(0,5); status="PRESENÇA";
+            if (sai) {
+                saiS = new Date(sai.data).toLocaleTimeString('pt-BR').slice(0,5);
+                let dtE = new Date(ent.data), dtS = new Date(sai.data);
+                if(dtS < dtE) dtS.setDate(dtS.getDate() + 1);
+                const diff = dtS - dtE;
+                const hT = Math.floor(diff/3600000), mT = Math.floor((diff%3600000)/60000);
+                horas = `${String(hT).padStart(2,'0')}:${String(mT).padStart(2,'0')}`;
+                
+                const saldoMs = diff - (8*3600000);
+                if (Math.abs(saldoMs) < 60000) { saldo="00:00"; pos=true; }
+                else {
+                    pos = saldoMs >= 0;
+                    const hS = Math.floor(Math.abs(saldoMs)/3600000), mS = Math.floor((Math.abs(saldoMs)%3600000)/60000);
+                    saldo = `${pos?'+':'-'}${String(hS).padStart(2,'0')}:${String(mS).padStart(2,'0')}`;
+                }
+            } else { saldo = "-08:00"; pos = false; }
+        } else {
+            if(d < new Date()) { saldo="-08:00"; pos=false; status="AUSÊNCIA"; } else { saldo=""; status=""; }
+        }
+        dias.push({ dataIso: iso, dataFormatada: str, diaNum: String(i).padStart(2,'0'), diaSemana: d.toLocaleDateString('pt-BR',{weekday:'long'}), entrada: entS, saida: saiS, horasTrabalhadas: horas, saldo, saldoPositivo: pos, status });
+    }
+    return dias;
+}
+function getMsg(iso) { return todasMensagens.find(m => m.dataIso === iso)?.texto; }
