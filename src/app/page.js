@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { 
   Clock, LogIn, LogOut, Menu, Home, ChevronRight, CheckSquare, 
   FileText, Moon, Sun, Coffee, ArrowLeftCircle, Calendar, 
-  ChevronDown, ChevronUp, PlusCircle, Eye, EyeOff, MessageCircle, Send, X, Edit3, Lock, Save, Mail
+  ChevronDown, ChevronUp, PlusCircle, Eye, EyeOff, MessageCircle, Send, X, Edit3, Lock, Save, Mail, CheckCircle
 } from "lucide-react";
 import { toast } from 'sonner';
 
@@ -15,11 +15,13 @@ export default function Page() {
   // 1. ESTADOS DE AUTENTICAÇÃO E USUÁRIO
   // ==========================================================
   const [user, setUser] = useState(null);
+  const [verificandoSessao, setVerificandoSessao] = useState(true); // Loading inicial
   
   // Login
   const [email, setEmail] = useState(""); 
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [lembreDeMim, setLembreDeMim] = useState(false); // Checkbox estado
   
   // Primeiro Acesso (Troca de Senha)
   const [modalNovaSenha, setModalNovaSenha] = useState(false);
@@ -42,7 +44,7 @@ export default function Page() {
   const [horaAtual, setHoraAtual] = useState(new Date());
   const [historico, setHistorico] = useState([]);
   
-  // NOVO: Armazena os registros do "Turno Atual" (das 03:00 às 03:00)
+  // Armazena os registros do "Turno Atual" (das 03:00 às 03:00)
   const [registrosTurno, setRegistrosTurno] = useState([]);
   
   const [status, setStatus] = useState(null); // Feedback visual de loading
@@ -64,7 +66,35 @@ export default function Page() {
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
 
   // ==========================================================
-  // 3. EFEITOS (TURNO INTELIGENTE + CRONÔMETRO)
+  // 3. EFEITO: VERIFICAÇÃO DE SESSÃO (LEMBRE DE MIM)
+  // ==========================================================
+  useEffect(() => {
+    async function checarSessao() {
+        try {
+            // Chama a API para ver se existe um Cookie válido
+            const res = await fetch("/api/auth"); 
+            const data = await res.json();
+            
+            if (data.success && data.user) {
+                if (data.user.tipo === 'admin') {
+                    router.push('/admin');
+                } else {
+                    setUser(data.user);
+                    carregarDadosUsuario(data.user.id);
+                    toast.success(`Bem-vindo de volta, ${data.user.nome.split(' ')[0]}!`);
+                }
+            }
+        } catch (e) {
+            console.log("Nenhuma sessão ativa encontrada.");
+        } finally {
+            setVerificandoSessao(false); // Para de carregar
+        }
+    }
+    checarSessao();
+  }, []);
+
+  // ==========================================================
+  // 4. EFEITO: TURNO INTELIGENTE + CRONÔMETRO
   // ==========================================================
   useEffect(() => {
     // 1. Criamos a função para poder reutilizar
@@ -99,7 +129,7 @@ export default function Page() {
       if (registrosDoTurno.length > 0) {
           setUltimoRegistroHoje(registrosDoTurno[registrosDoTurno.length - 1].tipo);
       } else {
-          setUltimoRegistroHoje(null); // Se passou das 03:00 e não tem nada, libera entrada
+          setUltimoRegistroHoje(null); 
       }
 
       // Cálculo de Horas Trabalhadas no Turno
@@ -141,16 +171,18 @@ export default function Page() {
 
     return () => clearInterval(timer);
   }, [historico]);
+
   // ==========================================================
-  // 4. FUNÇÕES DE AUTENTICAÇÃO (API)
+  // 5. FUNÇÕES DE AUTENTICAÇÃO (API)
   // ==========================================================
   
   // LOGIN
   async function handleLogin() {
     try {
+      // Envia email, senha e a opção lembreDeMim
       const res = await fetch("/api/auth", {
         method: "POST", 
-        body: JSON.stringify({ email, senha }),
+        body: JSON.stringify({ email, senha, lembreDeMim }),
       });
       const data = await res.json();
 
@@ -170,6 +202,13 @@ export default function Page() {
           toast.error(data.message); 
       }
     } catch (e) { toast.error("Erro de conexão com o servidor."); }
+  }
+
+  // LOGOUT (Limpa Cookie)
+  function handleLogout() {
+      // Limpa cookie forçando data de expiração no passado
+      document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT";
+      setUser(null);
   }
 
   // TROCAR SENHA
@@ -241,7 +280,7 @@ export default function Page() {
   }
   
   // ==========================================================
-  // 5. FUNÇÕES DE DADOS (PONTO E MENSAGENS)
+  // 6. FUNÇÕES DE DADOS (PONTO E MENSAGENS)
   // ==========================================================
   
   async function confirmarRegistro() {
@@ -348,11 +387,21 @@ export default function Page() {
   };
 
   // ==========================================================
-  // 6. RENDERIZAÇÃO: TELAS DE LOGIN
+  // 7. RENDERIZAÇÃO: TELAS DE LOGIN
   // ==========================================================
+  
+  // TELA DE LOADING (Enquanto verifica o cookie)
+  if (verificandoSessao) {
+    return (
+        <div className={`min-h-screen flex flex-col items-center justify-center ${cores.bg}`}>
+            <Clock className="animate-spin text-[#1351b4] w-12 h-12 mb-4"/>
+            <p className="text-gray-500 text-sm font-semibold">Verificando acesso...</p>
+        </div>
+    );
+  }
+
   if (!user || modalNovaSenha) {
     return (
-      // ADICIONADO: p-4 para garantir espaçamento em telas pequenas
       <div className={`min-h-screen flex flex-col items-center justify-center font-sans ${cores.bg} p-4`}>
         
         {modalNovaSenha && (
@@ -390,7 +439,6 @@ export default function Page() {
         )}
 
         {!modalNovaSenha && (
-            // ADICIONADO: max-w-md para ficar um pouco mais largo e harmonioso no celular
             <div className={`${cores.card} p-8 rounded shadow-md w-full max-w-md border-t-4 border-[#1351b4]`}>
                 
                 {!viewRecuperar ? (
@@ -407,7 +455,7 @@ export default function Page() {
                             onChange={e => setEmail(e.target.value)} 
                         />
                         
-                        <div className="relative mb-6">
+                        <div className="relative mb-4">
                             <input 
                                 className={`w-full p-3 border rounded focus:outline-none focus:ring-2 focus:ring-[#1351b4] ${cores.input} pr-10`} 
                                 type={mostrarSenha ? "text" : "password"} 
@@ -420,8 +468,15 @@ export default function Page() {
                             </button>
                         </div>
                         
-                        <div className="flex justify-end mb-6">
-                             <button onClick={() => setViewRecuperar(true)} className="text-xs text-gray-500 hover:text-[#1351b4] hover:underline">Esqueci minha senha</button>
+                        {/* CHECKBOX LEMBRE DE MIM */}
+                        <div className="flex items-center justify-between mb-6">
+                            <label className="flex items-center gap-2 cursor-pointer select-none group">
+                                <div onClick={() => setLembreDeMim(!lembreDeMim)} className={`w-5 h-5 rounded border flex items-center justify-center transition ${lembreDeMim ? 'bg-[#1351b4] border-[#1351b4]' : 'bg-white border-gray-300 group-hover:border-[#1351b4]'}`}>
+                                    {lembreDeMim && <CheckCircle size={14} className="text-white" />}
+                                </div>
+                                <span className="text-sm text-gray-600 font-medium">Lembrar por 30 dias</span>
+                            </label>
+                            <button onClick={() => setViewRecuperar(true)} className="text-xs text-gray-500 hover:text-[#1351b4] hover:underline">Esqueci a senha</button>
                         </div>
 
                         <button onClick={handleLogin} className="w-full bg-[#1351b4] text-white font-bold py-3 rounded-full hover:bg-[#0c3b85] transition shadow-md">
@@ -478,7 +533,7 @@ export default function Page() {
   }
 
   // ==========================================================
-  // 7. RENDERIZAÇÃO: DASHBOARD DO COLABORADOR
+  // 8. RENDERIZAÇÃO: DASHBOARD DO COLABORADOR
   // ==========================================================
   return (
     <div className={`min-h-screen font-sans ${cores.bg} ${cores.text} transition-colors duration-300`}>
@@ -490,7 +545,9 @@ export default function Page() {
           <span className="text-sm font-light hidden md:block">Bem-vindo, {user.nome.split(' ')[0]}</span>
         </div>
         <div className="flex items-center gap-3">
-           <button onClick={() => setUser(null)} className="text-xs border border-white/50 px-3 py-1 rounded hover:bg-white/10 transition">SAIR</button>
+           {/* BOTÃO SAIR AGORA CHAMA HANDLELOGOUT PARA LIMPAR COOKIE */}
+           <button onClick={handleLogout} className="text-xs border border-white/50 px-3 py-1 rounded hover:bg-white/10 transition">SAIR</button>
+           
            <div onClick={() => setTemaEscuro(!temaEscuro)} className="flex items-center gap-1 text-xs cursor-pointer select-none hover:opacity-80">
               <div className={`${temaEscuro ? 'bg-yellow-400 text-black' : 'bg-white text-[#071d41]'} rounded-full p-1 transition-all`}>
                 {temaEscuro ? <Sun size={14} /> : <Moon size={14} />}
@@ -502,7 +559,6 @@ export default function Page() {
 
       {/* SUB-HEADER (BREADCRUMB + MENU MOBILE TRIGGER) */}
       <div className={`${cores.subHeader} h-12 flex items-center px-4 md:px-8 text-white shadow-inner transition-colors relative z-10`}>
-        {/* ADICIONADO: Ao clicar no ícone Menu, abre o menu lateral no mobile */}
         <Menu 
             className="w-5 h-5 mr-3 cursor-pointer hover:opacity-80 md:cursor-default" 
             onClick={() => setMenuMobileAberto(!menuMobileAberto)}
@@ -513,7 +569,6 @@ export default function Page() {
       <main className="max-w-7xl mx-auto p-4 md:p-8 flex flex-col md:flex-row gap-6 relative">
         
         {/* SIDEBAR (AGORA RESPONSIVA) */}
-        {/* Adicionei lógica para ser um 'Drawer' (gaveta) no mobile e fixo no desktop */}
         <>
             {/* Overlay Escuro para mobile */}
             {menuMobileAberto && (
@@ -663,7 +718,7 @@ export default function Page() {
 }
 
 // ==========================================================
-// 8. COMPONENTES AUXILIARES
+// 9. COMPONENTES AUXILIARES
 // ==========================================================
 
 function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
