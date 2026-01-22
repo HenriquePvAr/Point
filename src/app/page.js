@@ -67,7 +67,8 @@ export default function Page() {
   // 3. EFEITOS (TURNO INTELIGENTE + CRONÔMETRO)
   // ==========================================================
   useEffect(() => {
-    const timer = setInterval(() => {
+    // 1. Criamos a função para poder reutilizar
+    const atualizarInterface = () => {
       const agora = new Date();
       setHoraAtual(agora);
       
@@ -130,10 +131,16 @@ export default function Page() {
       } else {
         setTempoTrabalhado("00:00:00");
       }
-    }, 1000);
+    };
+
+    // 2. Chama IMEDIATAMENTE (Corrige o atraso ao bater o ponto)
+    atualizarInterface();
+
+    // 3. Configura o relógio para continuar atualizando a cada segundo
+    const timer = setInterval(atualizarInterface, 1000);
+
     return () => clearInterval(timer);
   }, [historico]);
-
   // ==========================================================
   // 4. FUNÇÕES DE AUTENTICAÇÃO (API)
   // ==========================================================
