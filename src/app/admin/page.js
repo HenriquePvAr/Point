@@ -30,16 +30,12 @@ import {
   Mail,
   Coffee,
   FileSpreadsheet,
-  // =========================
-  // NOVO: CONSUMOS
-  // =========================
   ShoppingBag,
   DollarSign,
   Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
-// Biblioteca de Gráficos
 import {
   BarChart,
   Bar,
@@ -49,6 +45,19 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+
+// =======================
+// HELPERS DE DATA (ISO LOCAL)
+// =======================
+function toIsoLocalFromYMD(ano, mesIndex, dia) {
+  const m = String(mesIndex + 1).padStart(2, "0");
+  const d = String(dia).padStart(2, "0");
+  return `${ano}-${m}-${d}`;
+}
+
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
 
 export default function AdminPage() {
   // ==================================================================================
@@ -251,7 +260,11 @@ export default function AdminPage() {
     }
   }, [mesRelatorio, anoRelatorio, pontosGerais, usuarios, folgasGerais]);
 
+  // ✅ CORREÇÃO PRINCIPAL: não contar dias futuros na meta (evita saldo negativo no mês em andamento)
   function gerarRelatorioMensal() {
+    const hoje = new Date();
+    const hojeSemHora = startOfDay(hoje);
+
     const relatorio = usuarios.map((user) => {
       const ultimoDia = new Date(anoRelatorio, mesRelatorio + 1, 0).getDate();
 
@@ -259,16 +272,21 @@ export default function AdminPage() {
       let diasFolgaCount = 0;
       let minutosTrabalhados = 0;
       let diasFaltosos = [];
-      const hoje = new Date();
 
       for (let i = 1; i <= ultimoDia; i++) {
         const dataAtual = new Date(anoRelatorio, mesRelatorio, i);
+        const dataAtualSemHora = startOfDay(dataAtual);
         const dataStr = dataAtual.toLocaleDateString("pt-BR");
-        const dataIso = dataAtual.toISOString().split("T")[0];
+        const dataIso = toIsoLocalFromYMD(anoRelatorio, mesRelatorio, i);
+
+        // ✅ Se o dia é futuro, não entra na meta e não marca falta
+        if (dataAtualSemHora > hojeSemHora) {
+          continue;
+        }
 
         // Verifica se é folga
         const ehFolga = folgasGerais.some(
-          (f) => f.usuarioId === user.id && f.dataIso === dataIso
+          (f) => Number(f.usuarioId) === Number(user.id) && f.dataIso === dataIso
         );
 
         if (ehFolga) {
@@ -278,19 +296,17 @@ export default function AdminPage() {
 
         diasTrabalhadosEsperados++;
 
-        // Verifica Ponto
+        // ✅ Comparação só pelo dia (pt-BR)
         const pontosDia = pontosGerais.filter(
           (p) =>
-            p.usuarioId === user.id &&
+            Number(p.usuarioId) === Number(user.id) &&
             new Date(p.data).toLocaleDateString("pt-BR") === dataStr
         );
+
         const entrada = pontosDia.find((p) => p.tipo === "Entrada");
         const tevePonto = pontosDia.length > 0;
 
-        // Lógica de Falta
-        const dataAtualSemHora = new Date(dataAtual.toDateString());
-        const hojeSemHora = new Date(hoje.toDateString());
-
+        // Lógica de Falta (só se o dia já passou e não teve ponto)
         if (!tevePonto && dataAtualSemHora < hojeSemHora) {
           diasFaltosos.push(`${i}/${mesRelatorio + 1}`);
         }
@@ -330,6 +346,7 @@ export default function AdminPage() {
         faltas: diasFaltosos,
       };
     });
+
     setDadosRelatorio(relatorio);
   }
 
@@ -710,12 +727,21 @@ export default function AdminPage() {
       : "pausa";
   }
 
-  // Helper para buscar justificativa
+  // ✅ CORREÇÃO DO ÍCONE DE MENSAGEM (ID number vs string)
   function getMensagemDia(dataIso) {
-    if (!usuarioSelecionado && !relatorioDetalhado) return null;
-    const uid = usuarioSelecionado ? usuarioSelecionado.id : relatorioDetalhado.id;
-    return todasMensagens.find((m) => m.usuarioId == uid && m.dataIso === dataIso)
-      ?.texto;
+    const uid = usuarioSelecionado
+      ? usuarioSelecionado.id
+      : relatorioDetalhado
+      ? relatorioDetalhado.id
+      : null;
+
+    if (!uid) return null;
+
+    const msg = todasMensagens.find(
+      (m) => Number(m.usuarioId) === Number(uid) && m.dataIso === dataIso
+    );
+
+    return msg ? msg.texto : null;
   }
 
   const usuariosFiltrados = usuarios.filter(
@@ -757,9 +783,6 @@ export default function AdminPage() {
             }}
           />
 
-          {/* =========================
-              NOVO: BOTÃO CONSUMOS
-             ========================= */}
           <BotaoMenu
             icon={<ShoppingBag size={20} />}
             text="Consumos"
@@ -905,7 +928,7 @@ export default function AdminPage() {
                   />
                 </div>
 
-                {/* GRÁFICO DE PRODUTIVIDADE (Recharts) */}
+                {/* GRÁFICO DE PRODUTIVIDADE */}
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
                   <h3 className="font-bold text-[#071d41] mb-4 text-sm uppercase tracking-wide">
                     Produtividade da Equipe (Últimos 7 dias)
@@ -1062,10 +1085,9 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* 2. RELATÓRIOS (LISTA COM IMPRESSÃO CORRIGIDA) */}
+            {/* 2. RELATÓRIOS */}
             {view === "relatorios" && !usuarioSelecionado && !relatorioDetalhado && (
               <div className="space-y-6 animate-fade-in">
-                {/* CABEÇALHO APENAS NA IMPRESSÃO */}
                 <div className="hidden print:block text-center mb-6">
                   <h1 className="text-2xl font-bold">Relatório Geral de Ponto</h1>
                   <p className="text-sm">
@@ -1131,7 +1153,6 @@ export default function AdminPage() {
                       ))}
                     </select>
 
-                    {/* BOTÃO EXPORTAR EXCEL */}
                     <button
                       onClick={handleExportarExcel}
                       className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition shadow-sm"
@@ -1139,7 +1160,6 @@ export default function AdminPage() {
                       <FileSpreadsheet size={16} /> Excel
                     </button>
 
-                    {/* BOTÃO EXPORTAR PDF (Imprime a Lista) */}
                     <button
                       onClick={() => window.print()}
                       className="bg-red-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-red-700 transition shadow-sm"
@@ -1231,6 +1251,7 @@ export default function AdminPage() {
                     </tbody>
                   </table>
                 </div>
+
                 <div className="mt-4 p-4 bg-blue-50 rounded border border-blue-100 text-xs text-blue-800 flex items-start gap-2 print:hidden">
                   <AlertCircle size={16} className="mt-0.5" />
                   <p>
@@ -1241,7 +1262,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* 3. CONSUMOS (NOVA ABA) */}
+            {/* 3. CONSUMOS */}
             {view === "consumos" && !usuarioSelecionado && !relatorioDetalhado && (
               <div className="space-y-6 animate-fade-in print:hidden">
                 <div className="bg-white p-6 rounded shadow-sm border border-gray-200">
@@ -1475,7 +1496,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Botões de Controle (Somem na impressão) */}
+                {/* Botões de Controle */}
                 <div className="mt-8 flex flex-col md:flex-row justify-center gap-4 print:hidden">
                   <button
                     onClick={() => setRelatorioDetalhado(null)}
@@ -1484,7 +1505,6 @@ export default function AdminPage() {
                     <ArrowLeft size={18} /> Voltar
                   </button>
 
-                  {/* BOTÃO DE ENVIAR EMAIL */}
                   <button
                     onClick={() => handleEnviarEmailRelatorio(relatorioDetalhado)}
                     className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg transition"
@@ -1492,7 +1512,6 @@ export default function AdminPage() {
                     <Mail size={18} /> Enviar por E-mail
                   </button>
 
-                  {/* BOTÃO DE IMPRIMIR */}
                   <button
                     onClick={() => window.print()}
                     className="px-6 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg transition"
@@ -1623,13 +1642,15 @@ export default function AdminPage() {
                         pontosReais={pontosGerais.filter(
                           (p) =>
                             p.usuarioId === usuarioSelecionado.id &&
-                            new Date(p.data).toLocaleDateString("pt-BR") === dia.dataFormatada
+                            new Date(p.data).toLocaleDateString("pt-BR") ===
+                              dia.dataFormatada
                         )}
-                        mensagem={getMensagemDia(dia.dataIso)}
+                        mensagem={getMensagemDia(dia.dataIso)} // ✅ CRUCIAL
                         usuarioId={usuarioSelecionado.id}
                         isFolga={folgasGerais.some(
                           (f) =>
-                            f.usuarioId === usuarioSelecionado.id && f.dataIso === dia.dataIso
+                            Number(f.usuarioId) === Number(usuarioSelecionado.id) &&
+                            f.dataIso === dia.dataIso
                         )}
                         onUpdate={carregarDados}
                       />
@@ -1705,7 +1726,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL NOVO USUÁRIO (SEM CPF) */}
+      {/* MODAL NOVO USUÁRIO */}
       {modalNovoUsuario && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in">
@@ -1778,7 +1799,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL EDITAR USUÁRIO (SEM CPF) */}
+      {/* MODAL EDITAR USUÁRIO */}
       {modalEditarUsuario && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm border-t-4 border-orange-500">
@@ -1903,21 +1924,22 @@ export default function AdminPage() {
 // FUNÇÕES AUXILIARES E COMPONENTES
 // ==========================================================
 
-// Helper Específico para a Folha de Ponto Impressa (Lógica Completa)
 function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
   const dias = [];
   const ultimoDia = new Date(ano, mes + 1, 0).getDate();
+  const hojeSemHora = startOfDay(new Date());
 
   for (let i = 1; i <= ultimoDia; i++) {
     const data = new Date(ano, mes, i);
     const dataStr = data.toLocaleDateString("pt-BR");
-    const dataIso = data.toISOString().split("T")[0];
+    const dataIso = toIsoLocalFromYMD(ano, mes, i);
+    const dataSemHora = startOfDay(data);
+
     const diaSemana = data
       .toLocaleDateString("pt-BR", { weekday: "short" })
       .replace(".", "")
       .toUpperCase();
 
-    // Verifica se é folga
     const isFolga = folgas.some((f) => f.dataIso === dataIso);
 
     const pontosDia = pontos.filter(
@@ -1947,7 +1969,7 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
         let dtSaida = new Date(saida.data);
         if (dtSaida < dtEntrada) dtSaida.setDate(dtSaida.getDate() + 1);
 
-        const diff = dtSaida - dtEntrada; // ms trabalhados
+        const diff = dtSaida - dtEntrada;
         const hTrab = Math.floor(diff / 3600000);
         const mTrab = Math.floor((diff % 3600000) / 60000);
         horasTrabalhadas = `${String(hTrab).padStart(2, "0")}:${String(mTrab).padStart(
@@ -1958,7 +1980,6 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
         const meta = 8 * 3600000;
         const saldoMs = diff - meta;
 
-        // CORREÇÃO: Tolerância para 00:00 ser verde
         if (Math.abs(saldoMs) < 60000) {
           saldo = "00:00";
           saldoPositivo = true;
@@ -1972,12 +1993,18 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
           )}:${String(mSaldo).padStart(2, "0")}`;
         }
       } else {
-        saldo = "-08:00";
-        saldoPositivo = false;
+        // Se é HOJE e ainda não saiu, não penaliza como ausência
+        if (dataSemHora.getTime() === hojeSemHora.getTime()) {
+          saldo = "";
+          status = "EM ANDAMENTO";
+          saldoPositivo = true;
+        } else {
+          saldo = "-08:00";
+          saldoPositivo = false;
+        }
       }
     } else {
-      // Verificar se o dia já passou
-      if (data < new Date()) {
+      if (dataSemHora < hojeSemHora) {
         saldo = "-08:00";
         saldoPositivo = false;
         status = "AUSÊNCIA";
@@ -2003,27 +2030,28 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
   return dias;
 }
 
-// --- COMPONENTE DE LINHA DO DIA (AGORA COM PODERES DE EDIÇÃO) ---
+// ✅ CORREÇÃO: ItemDiaAdmin agora calcula status/saldo usando pontosReais (não dia.pontos)
 function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate }) {
   const [aberto, setAberto] = useState(false);
 
-  // Estados para Edição/Criação
   const [editandoId, setEditandoId] = useState(null);
   const [editValues, setEditValues] = useState({ hora: "", tipo: "" });
   const [adicionando, setAdicionando] = useState(false);
   const [novoPonto, setNovoPonto] = useState({ hora: "08:00", tipo: "Entrada" });
 
-  // === CÁLCULO DE SALDO (Com Correção de Madrugada e Folga) ===
+  const pontosOrdenados = Array.isArray(pontosReais)
+    ? [...pontosReais].sort((a, b) => new Date(a.data) - new Date(b.data))
+    : [];
+
   let saldoStr = "00:00";
   let saldoPositivo = true;
   let statusDia = "AUSÊNCIA";
 
-  // Se for marcado como folga
   if (isFolga) {
     statusDia = "FOLGA";
   } else {
-    const primeiraEntrada = dia.pontos.find((p) => p.tipo === "Entrada");
-    const ultimaSaida = dia.pontos.filter((p) => p.tipo === "Saída").pop();
+    const primeiraEntrada = pontosOrdenados.find((p) => p.tipo === "Entrada");
+    const ultimaSaida = pontosOrdenados.filter((p) => p.tipo === "Saída").pop();
 
     if (primeiraEntrada) {
       statusDia = "PRESENÇA";
@@ -2039,7 +2067,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         const meta = 8 * 60 * 60 * 1000;
         const saldoMs = diff - meta;
 
-        // CORREÇÃO NO ITEM VISUAL
         if (Math.abs(saldoMs) < 60000) {
           saldoPositivo = true;
           saldoStr = "00:00";
@@ -2062,23 +2089,19 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
     }
   }
 
-  // --- AÇÕES DO ADMIN ---
-
-  // 1. Excluir Ponto
   async function handleExcluir(id) {
     if (!confirm("Tem certeza que deseja apagar este registro?")) return;
     try {
       const res = await fetch(`/api/ponto?id=${id}`, { method: "DELETE" });
       if (res.ok) {
         toast.success("Registro apagado.");
-        onUpdate(); // Atualiza a tela
+        onUpdate();
       }
     } catch (e) {
       toast.error("Erro ao excluir.");
     }
   }
 
-  // 2. Iniciar Edição (Abre os inputs na linha)
   function iniciarEdicao(ponto) {
     const dataObj = new Date(ponto.data);
     const horaFormatada = dataObj.toLocaleTimeString("pt-BR", {
@@ -2089,7 +2112,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
     setEditandoId(ponto.id);
   }
 
-  // 3. Salvar Edição
   async function salvarEdicao(idOriginal, dataOriginal) {
     try {
       const dataBase = new Date(dataOriginal);
@@ -2115,12 +2137,10 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
     }
   }
 
-  // 4. Salvar Novo Ponto Manual
   async function salvarNovoPonto() {
     try {
-      // Pega a data do dia que estamos vendo (YYYY-MM-DD)
       const [ano, mes, diaMes] = dia.dataIso.split("-");
-      const dataFinal = new Date(ano, mes - 1, diaMes);
+      const dataFinal = new Date(Number(ano), Number(mes) - 1, Number(diaMes));
       const [h, m] = novoPonto.hora.split(":");
       dataFinal.setHours(parseInt(h), parseInt(m));
 
@@ -2144,14 +2164,13 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
     }
   }
 
-  // 5. Alternar Folga
   async function toggleFolga() {
     try {
       await fetch("/api/folgas", {
         method: "POST",
         body: JSON.stringify({ usuarioId, dataIso: dia.dataIso }),
       });
-      onUpdate(); // Atualiza para recalcular
+      onUpdate();
       toast.success(isFolga ? "Folga removida!" : "Folga definida!");
     } catch (e) {
       toast.error("Erro ao definir folga.");
@@ -2169,22 +2188,20 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         <div className="flex flex-col flex-1">
           <span className="font-bold text-sm text-[#071d41]">{dia.dataFormatada}</span>
 
-          {/* VISUAL STATUS DO DIA */}
           <div className="flex gap-2 mt-1">
             <span
               className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase 
-                            ${
-                              statusDia === "PRESENÇA"
-                                ? "bg-green-100 text-green-700 border-green-200"
-                                : statusDia === "FOLGA"
-                                ? "bg-blue-100 text-blue-700 border-blue-200"
-                                : "bg-red-50 text-red-500 border-red-200"
-                            }`}
+                ${
+                  statusDia === "PRESENÇA"
+                    ? "bg-green-100 text-green-700 border-green-200"
+                    : statusDia === "FOLGA"
+                    ? "bg-blue-100 text-blue-700 border-blue-200"
+                    : "bg-red-50 text-red-500 border-red-200"
+                }`}
             >
               {statusDia}
             </span>
 
-            {/* Mostra saldo se não for folga */}
             {statusDia !== "FOLGA" && (
               <span
                 className={`text-[10px] px-2 py-0.5 rounded border font-bold ${
@@ -2200,7 +2217,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         </div>
 
         <div className="flex items-center gap-3">
-          {/* BALÃO DE MENSAGEM */}
           {mensagem && (
             <div className="bg-blue-100 text-blue-600 p-1.5 rounded-full" title="Possui Justificativa">
               <MessageCircle size={14} />
@@ -2214,27 +2230,28 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
 
       {aberto && (
         <div className="bg-gray-50 p-4 pl-4 md:pl-8 animate-fade-in border-t border-gray-100 shadow-inner text-sm">
-          {/* BARRA DE AÇÕES DO DIA */}
           <div className="flex flex-wrap gap-2 mb-4">
             <button
-              onClick={() => setAdicionando(!adicionando)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setAdicionando(!adicionando);
+              }}
               className="bg-green-100 text-green-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-green-200 flex items-center gap-1 shadow-sm transition"
             >
               <PlusCircle size={14} /> {adicionando ? "Cancelar Adição" : "Adicionar Ponto"}
             </button>
 
-            {/* BOTÃO DE FOLGA */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 toggleFolga();
               }}
               className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition 
-                                ${
-                                  isFolga
-                                    ? "bg-gray-200 text-gray-600 hover:bg-gray-300"
-                                    : "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                }`}
+                ${
+                  isFolga
+                    ? "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                    : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                }`}
             >
               {isFolga ? (
                 <>
@@ -2248,7 +2265,6 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
             </button>
           </div>
 
-          {/* FORMULÁRIO DE NOVO PONTO */}
           {adicionando && (
             <div className="bg-white border-l-4 border-green-500 p-3 rounded shadow-sm mb-4 flex flex-wrap items-center gap-2 animate-scale-in">
               <span className="text-xs font-bold text-green-700 uppercase mr-2">Novo:</span>
@@ -2290,8 +2306,8 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
           )}
 
           <div className="space-y-2">
-            {pontosReais && pontosReais.length > 0 ? (
-              pontosReais.map((p) => (
+            {pontosOrdenados && pontosOrdenados.length > 0 ? (
+              pontosOrdenados.map((p) => (
                 <div
                   key={p.id}
                   className="flex items-center justify-between text-sm bg-white p-2 px-3 rounded border border-gray-200 shadow-sm hover:shadow-md transition"
@@ -2456,17 +2472,19 @@ function formatarSaldo(minutos) {
 function gerarDiasDoMesSelecionado(mes, ano, pontos) {
   const dias = [];
   const ultimoDia = new Date(ano, mes + 1, 0).getDate();
+
   for (let i = 1; i <= ultimoDia; i++) {
     const d = new Date(ano, mes, i);
     const dataStr = d.toLocaleDateString("pt-BR");
-    const dataIso = d.toISOString().split("T")[0];
+    const dataIso = toIsoLocalFromYMD(ano, mes, i);
 
     dias.push({
       dataIso,
       dataFormatada: dataStr,
       diaSemana: d.toLocaleDateString("pt-BR", { weekday: "long" }),
-      pontos: [], // Placeholder
+      pontos: [], // Mantido, mas o cálculo agora usa pontosReais
     });
   }
-  return dias.reverse(); // Mostra do dia 31 pro dia 1
+
+  return dias.reverse();
 }
