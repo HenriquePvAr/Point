@@ -9,30 +9,78 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// 1. Enum para Permissões (Hierarquia de acesso)
+enum Role {
+  SUPER_ADMIN  // Você (Dono do SaaS - Acesso total a tudo)
+  ADMIN        // Cliente (Dono da Empresa que paga o sistema)
+  FUNCIONARIO  // Usuário final (Bate ponto, vê mensagens)
+}
+
+// 2. Tabela da Empresa (O Cliente do seu SaaS)
+model Empresa {
+  id              String      @id @default(uuid())
+  nome            String
+  cnpj            String?     @unique
+  ativo           Boolean     @default(true) // Se false, ninguém da empresa loga
+  pagoAte         DateTime?   // Data de vencimento da assinatura
+  plano           String      @default("mensal") // 'mensal' | 'anual'
+  asaasCustomerId String?     // ID do cliente lá no Asaas
+  
+  criadoEm        DateTime    @default(now())
+  atualizadoEm    DateTime    @updatedAt
+  
+  usuarios        Usuario[]
+  pagamentos      Pagamento[]
+}
+
+// 3. Tabela de Pagamentos (Histórico financeiro)
+model Pagamento {
+  id            String    @id @default(uuid())
+  valor         Float
+  metodo        String    // 'PIX', 'CREDIT_CARD', 'MANUAL'
+  status        String    // 'PENDING', 'PAID', 'FAILED'
+  asaasId       String?   // ID da cobrança gerada no Asaas
+  dataPagamento DateTime?
+  criadoEm      DateTime  @default(now())
+
+  empresaId     String
+  empresa       Empresa   @relation(fields: [empresaId], references: [id])
+}
+
+// 4. Usuário (Agora vinculado a uma Empresa)
 model Usuario {
   id                Int      @id @default(autoincrement())
   nome              String
   cpf               String   @unique
   email             String?  @unique
   senha             String
-  cargo             String?
+  
+  // Controle de Acesso e Status
+  role              Role     @default(FUNCIONARIO) // Substitui 'cargo' e 'tipo' antigos
   status            String   @default("ativo")
   primeiroAcesso    Boolean  @default(true)
-  tipo              String   @default("funcionario")
   codigoRecuperacao String?
 
+  // Vínculo Multi-Tenant (Obrigatório)
+  empresaId         String
+  empresa           Empresa  @relation(fields: [empresaId], references: [id])
+
+  // Relacionamentos do Sistema
   pontos       Ponto[]
   mensagens    Mensagem[]
   notificacoes Notificacao[]
   folgas       Folga[]
-  consumos     Consumo[]   // <--- ADICIONADO: Relação com os consumos
+  consumos     Consumo[]
 }
+
+// --- Tabelas do Sistema (Vinculadas ao Usuário) ---
 
 model Ponto {
   id        Int      @id @default(autoincrement())
   data      DateTime @default(now())
-  tipo      String   
+  tipo      String   // 'entrada', 'saida', etc.
   ip        String?
+  
   usuario   Usuario  @relation(fields: [usuarioId], references: [id])
   usuarioId Int
 }
@@ -41,37 +89,36 @@ model Mensagem {
   id        Int      @id @default(autoincrement())
   dataIso   String   
   texto     String
+  
   usuario   Usuario  @relation(fields: [usuarioId], references: [id])
   usuarioId Int
 }
 
-// Tabela necessária para o "sininho" do Admin
 model Notificacao {
   id        Int      @id @default(autoincrement())
-  tipo      String   // Ex: "Entrada", "Saída"
+  tipo      String   
   lida      Boolean  @default(false)
   criadoEm  DateTime @default(now())
-   
+  
   usuario   Usuario  @relation(fields: [usuarioId], references: [id])
   usuarioId Int
 }
 
-// Tabela de Folgas
 model Folga {
   id        Int      @id @default(autoincrement())
   data      DateTime 
+  
   usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   usuarioId Int
 
-  @@unique([usuarioId, data]) // Evita folga duplicada no mesmo dia
+  @@unique([usuarioId, data]) // Evita duplicidade de folga
 }
 
-// <--- NOVA TABELA DE CONSUMOS (Cantina/Loja)
 model Consumo {
   id        Int      @id @default(autoincrement())
   nomeItem  String
   valor     Float
-  imagemUrl String?  // Foto do produto (opcional)
+  imagemUrl String?
   data      DateTime @default(now())
   
   usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)

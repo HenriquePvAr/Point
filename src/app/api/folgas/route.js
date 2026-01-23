@@ -3,34 +3,49 @@ import prisma from '@/lib/prisma';
 
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    if(!userId) return NextResponse.json([]);
+    const empresaId = searchParams.get('empresaId');
 
-    const folgas = await prisma.folga.findMany({
-        where: { usuarioId: parseInt(userId) }
-    });
-    // Retorna array de strings ISO das datas (ex: "2026-01-20")
-    return NextResponse.json(folgas.map(f => f.data.toISOString().split('T')[0]));
+    if (!empresaId) return NextResponse.json([]);
+
+    try {
+        const folgas = await prisma.folga.findMany({
+            where: {
+                usuario: { empresaId: empresaId } // Filtro SaaS
+            },
+            include: {
+                usuario: { select: { nome: true } }
+            },
+            orderBy: { data: 'desc' }
+        });
+        return NextResponse.json(folgas);
+    } catch (error) {
+        return NextResponse.json([], { status: 500 });
+    }
 }
 
+// POST e DELETE continuam iguais pois usam usuarioId ou ID direto
 export async function POST(request) {
-    const { usuarioId, dataIso } = await request.json();
-    const dataFolga = new Date(dataIso);
-
-    // Verifica se já existe folga
-    const existe = await prisma.folga.findFirst({
-        where: { usuarioId: parseInt(usuarioId), data: dataFolga }
-    });
-
-    if (existe) {
-        // Se existe, REMOVE (Toggle)
-        await prisma.folga.delete({ where: { id: existe.id } });
-        return NextResponse.json({ status: 'removed' });
-    } else {
-        // Se não existe, CRIA
+    try {
+        const body = await request.json();
         await prisma.folga.create({
-            data: { usuarioId: parseInt(usuarioId), data: dataFolga }
+            data: {
+                data: new Date(body.data),
+                usuarioId: parseInt(body.usuarioId)
+            }
         });
-        return NextResponse.json({ status: 'added' });
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        return NextResponse.json({ success: false }, { status: 500 });
+    }
+}
+
+export async function DELETE(request) {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    try {
+        await prisma.folga.delete({ where: { id: parseInt(id) } });
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        return NextResponse.json({ success: false }, { status: 500 });
     }
 }

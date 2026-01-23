@@ -1,23 +1,28 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma'; 
+import prisma from '@/lib/prisma';
 
-// === CONFIGURAÇÃO DOS LOCAIS PERMITIDOS (GEOLOCALIZAÇÃO) ===
+// =================================================================================
+// CONFIGURAÇÃO DE SEGURANÇA E LOCAIS
+// =================================================================================
+
+// Lista de Locais Permitidos (Geofence)
+// TODO: No futuro, você pode mover isso para o banco de dados (model Empresa) para cada cliente ter o seu.
 const LOCAIS_PERMITIDOS = [
     { 
         nome: "Pinguim", 
         lat: -3.0247373191862885, 
         lon: -60.00115033251761, 
-        raio: 100 // Raio de tolerância em metros
+        raio: 100 // Metros
     },
     { 
         nome: "Censipam", 
         lat: -3.022780933499939, 
         lon: -60.05511752323518, 
-        raio: 100 // Raio de tolerância em metros
+        raio: 100 // Metros
     }
 ];
 
-// Função para calcular distância (Fórmula de Haversine)
+// Função Auxiliar: Calcula distância entre dois pontos (Haversine)
 function calcularDistancia(lat1, lon1, lat2, lon2) {
     const R = 6371e3; // Raio da terra em metros
     const p1 = lat1 * Math.PI / 180;
@@ -30,34 +35,80 @@ function calcularDistancia(lat1, lon1, lat2, lon2) {
               Math.sin(deltaL / 2) * Math.sin(deltaL / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-    return R * c; // Retorna distância em metros
+    return R * c;
 }
 
+// Função Auxiliar: Verifica se a empresa está pagando (Bloqueio SaaS)
+async function verificarStatusEmpresa(usuarioId) {
+    if (!usuarioId) return { bloqueado: false }; // Deixa o erro de 'sem id' para a validação principal
+
+    try {
+        const usuario = await prisma.usuario.findUnique({
+            where: { id: parseInt(usuarioId) },
+            include: { empresa: true }
+        });
+
+        if (!usuario) return { bloqueado: true, motivo: "Usuário não encontrado." };
+        if (!usuario.empresa) return { bloqueado: true, motivo: "Empresa não vinculada." };
+
+        // 1. Super Admin (Você) nunca é bloqueado
+        if (usuario.role === 'SUPER_ADMIN') return { bloqueado: false };
+
+        // 2. Verifica se está ativa e se o pagamento está em dia
+        const hoje = new Date();
+        const validade = usuario.empresa.pagoAte ? new Date(usuario.empresa.pagoAte) : null;
+        
+        // Regra: Bloqueia se 'ativo' for false OU se a data de validade já passou
+        const estaVencido = validade && validade < hoje;
+
+        if (!usuario.empresa.ativo || estaVencido) {
+            return { 
+                bloqueado: true, 
+                motivo: "Acesso bloqueado. A assinatura da empresa está pendente ou expirada." 
+            };
+        }
+
+        return { bloqueado: false };
+    } catch (error) {
+        console.error("Erro ao verificar status da empresa:", error);
+        return { bloqueado: true, motivo: "Erro interno ao verificar permissões." };
+    }
+}
+
+// =================================================================================
 // 1. REGISTRAR PONTO (POST)
-// Agora suporta modo normal (com GPS) e modo admin (sem GPS)
+// =================================================================================
 export async function POST(request) {
     const body = await request.json();
     const { latitude, longitude, usuarioId, tipo, modoAdmin, dataManual } = body;
 
+    // --- [NOVO] TRAVA FINANCEIRA (SAAS) ---
+    // Antes de qualquer coisa, verifica se a empresa pagou.
+    const statusEmpresa = await verificarStatusEmpresa(usuarioId);
+    if (statusEmpresa.bloqueado) {
+        return NextResponse.json({ 
+            success: false, 
+            message: statusEmpresa.motivo 
+        }, { status: 403 });
+    }
+    // --------------------------------------
+
     // =================================================================================
     // CAMINHO A: MODO ADMIN (Inserção/Correção Manual)
-    // Se a flag modoAdmin vier true, pulamos as checagens de GPS e travas de tempo
     // =================================================================================
     if (modoAdmin) {
         try {
-            console.log(`Admin inserindo ponto manual para ID: ${usuarioId}`);
+            console.log(`[Admin] Inserindo ponto manual para ID: ${usuarioId}`);
             
             const novoPonto = await prisma.ponto.create({
                 data: {
                     tipo: tipo,
-                    ip: "Manual (Admin)", // Identifica que foi ajustado manualmente
+                    ip: "Manual (Admin)", 
                     usuarioId: parseInt(usuarioId),
-                    // Se o admin passou uma data específica (dataManual), usa ela. Se não, usa Agora.
+                    // Se o admin passou uma data específica, usa ela. Senão, 'agora'.
                     data: dataManual ? new Date(dataManual) : new Date() 
                 }
             });
-
-            // Opcional: Criar notificação ou log de auditoria aqui se desejar
             
             return NextResponse.json({ 
                 success: true, 
@@ -71,8 +122,7 @@ export async function POST(request) {
     }
 
     // =================================================================================
-    // CAMINHO B: MODO FUNCIONÁRIO (Fluxo Normal com Segurança)
-    // Se não for admin, segue exatamente a lógica que você já tinha
+    // CAMINHO B: MODO FUNCIONÁRIO (Fluxo Normal com GPS)
     // =================================================================================
 
     // 1. VALIDAÇÃO DE GPS
@@ -85,7 +135,7 @@ export async function POST(request) {
 
     console.log(`Tentativa de ponto (${tipo}) em: ${latitude}, ${longitude}`);
 
-    // 2. TRAVA ANTI-DUPLICAÇÃO (SEGURANÇA)
+    // 2. TRAVA ANTI-DUPLICAÇÃO (Anti-Spam de 1 min)
     try {
         const ultimoPonto = await prisma.ponto.findFirst({
             where: { usuarioId: parseInt(usuarioId) },
@@ -95,9 +145,8 @@ export async function POST(request) {
         if (ultimoPonto) {
             const agora = new Date();
             const tempoUltimoPonto = new Date(ultimoPonto.data);
-            const diferenca = agora - tempoUltimoPonto; // Diferença em milissegundos
+            const diferenca = agora - tempoUltimoPonto; // ms
 
-            // Se faz menos de 60 segundos (60000ms) que bateu o ponto, bloqueia
             if (diferenca < 60000) { 
                 return NextResponse.json({ 
                     success: false, 
@@ -122,7 +171,6 @@ export async function POST(request) {
             localProximo = local.nome;
         }
         
-        // Se estiver dentro do raio de algum local, libera
         if (dist <= local.raio) {
             localValido = true;
             console.log(`Ponto aceito em: ${local.nome} (Distância: ${Math.round(dist)}m)`);
@@ -138,7 +186,7 @@ export async function POST(request) {
         }, { status: 403 });
     }
 
-    // Pega IP para registro
+    // Pega IP para auditoria
     let ip = request.headers.get("x-forwarded-for") || "::1";
     if (ip.includes(',')) ip = ip.split(',')[0].trim();
     if (ip.startsWith("::ffff:")) ip = ip.replace("::ffff:", "");
@@ -146,7 +194,6 @@ export async function POST(request) {
     try {
         // 5. TRANSAÇÃO: SALVA PONTO + NOTIFICAÇÃO
         const [novoPonto, novaNotificacao] = await prisma.$transaction([
-            // Cria o registro oficial
             prisma.ponto.create({
                 data: {
                     tipo: tipo,
@@ -154,7 +201,6 @@ export async function POST(request) {
                     usuarioId: parseInt(usuarioId)
                 }
             }),
-            // Cria o aviso para o Admin
             prisma.notificacao.create({
                 data: {
                     tipo: tipo,
@@ -175,46 +221,33 @@ export async function POST(request) {
     }
 }
 
-// 2. LISTAR PONTOS (GET) - ATUALIZADO COM FILTRO DE MÊS/ANO
+// =================================================================================
+// 2. LISTAR PONTOS (GET)
+// =================================================================================
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
-    const mes = searchParams.get('mes'); // parâmetro opcional
-    const ano = searchParams.get('ano'); // parâmetro opcional
+    const mes = searchParams.get('mes');
+    const ano = searchParams.get('ano');
 
     try {
         if (!userId) return NextResponse.json([]);
 
-        // Configura o filtro de data (se mes e ano forem passados)
+        // Configura filtro de data
         let filtroData = {};
-        
-        // Verifica se mes e ano foram fornecidos e não são nulos/undefined
         if (mes !== null && ano !== null) {
-            // Cria data inicial: dia 1 do mês selecionado
-            // Nota: No JS o mês começa em 0 (Jan=0), verifique se o front manda 0 ou 1.
-            // Assumindo que o front manda 0 para Janeiro (padrão JS), usamos parseInt(mes).
             const dataInicio = new Date(parseInt(ano), parseInt(mes), 1);
-            
-            // Cria data final: último dia do mês às 23:59:59
-            // O dia 0 do mês seguinte retorna o último dia do mês atual
             const dataFim = new Date(parseInt(ano), parseInt(mes) + 1, 0, 23, 59, 59);
-            
-            filtroData = {
-                gte: dataInicio,
-                lte: dataFim
-            };
+            filtroData = { gte: dataInicio, lte: dataFim };
         }
 
-        // Busca histórico do usuário
+        // Busca histórico
         const historico = await prisma.ponto.findMany({
             where: {
                 usuarioId: parseInt(userId),
-                // Se houver filtro configurado, adiciona ao where. Se não, traz tudo.
                 ...(mes !== null && ano !== null ? { data: filtroData } : {})
             },
-            orderBy: {
-                data: 'desc'
-            }
+            orderBy: { data: 'desc' }
         });
         
         return NextResponse.json(historico);
@@ -225,18 +258,21 @@ export async function GET(request) {
     }
 }
 
-// 3. ATUALIZAR PONTO (PUT)
-// Usado pelo botão de Lápis do Admin para corrigir horários ou tipos
+// =================================================================================
+// 3. ATUALIZAR PONTO (PUT) - Correção pelo Admin
+// =================================================================================
 export async function PUT(request) {
     try {
         const body = await request.json();
         const { id, novaData, novoTipo } = body;
+
+        // Opcional: Adicionar verificação de permissão da empresa aqui também
+        // (Isso exigiria buscar o usuarioId do ponto antes de atualizar)
         
-        // Atualiza o registro no banco
         await prisma.ponto.update({
             where: { id: parseInt(id) },
             data: {
-                data: new Date(novaData), // Atualiza para a nova data/hora combinada
+                data: new Date(novaData),
                 tipo: novoTipo
             }
         });
@@ -248,8 +284,9 @@ export async function PUT(request) {
     }
 }
 
+// =================================================================================
 // 4. EXCLUIR PONTO (DELETE)
-// Usado pelo botão de Lixeira do Admin para remover duplicados ou erros
+// =================================================================================
 export async function DELETE(request) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

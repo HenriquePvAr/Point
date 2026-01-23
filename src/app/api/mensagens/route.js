@@ -1,29 +1,41 @@
 import { NextResponse } from 'next/server';
-
-// Banco de dados em memória para as justificativas
-if (!global.mensagens) global.mensagens = [];
+import prisma from '@/lib/prisma';
 
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
+    const empresaId = searchParams.get('empresaId');
 
-    // Se passar userId, filtra. Se não, retorna tudo (para o admin)
-    if (userId) {
-        return NextResponse.json(global.mensagens.filter(m => m.usuarioId == userId));
+    if (!empresaId) return NextResponse.json([]);
+
+    try {
+        const mensagens = await prisma.mensagem.findMany({
+            where: {
+                usuario: { empresaId: empresaId } // Filtro SaaS
+            },
+            include: {
+                usuario: { select: { nome: true } }
+            },
+            orderBy: { dataIso: 'desc' },
+            take: 20
+        });
+        return NextResponse.json(mensagens);
+    } catch (error) {
+        return NextResponse.json([], { status: 500 });
     }
-    return NextResponse.json(global.mensagens);
 }
 
 export async function POST(request) {
-    const { usuarioId, dataIso, texto } = await request.json();
-    
-    // Remove mensagem anterior desse dia (se houver) para atualizar
-    global.mensagens = global.mensagens.filter(m => !(m.usuarioId == usuarioId && m.dataIso === dataIso));
-    
-    // Se tiver texto, salva a nova
-    if (texto && texto.trim() !== "") {
-        global.mensagens.push({ usuarioId, dataIso, texto });
+    try {
+        const body = await request.json();
+        const novaMsg = await prisma.mensagem.create({
+            data: {
+                texto: body.texto,
+                dataIso: new Date().toISOString(),
+                usuarioId: parseInt(body.usuarioId)
+            }
+        });
+        return NextResponse.json(novaMsg);
+    } catch (error) {
+        return NextResponse.json({ error: "Erro ao enviar" }, { status: 500 });
     }
-    
-    return NextResponse.json({ success: true });
 }
