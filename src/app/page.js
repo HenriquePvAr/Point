@@ -1,11 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Clock, LogIn, LogOut, Menu, Home, ChevronRight, CheckSquare,
   FileText, Moon, Sun, Coffee, ArrowLeftCircle, Calendar,
   ChevronDown, ChevronUp, PlusCircle, Eye, EyeOff, MessageCircle, Send, X, Edit3, Lock, Save, Mail, CheckCircle,
-  User, Trash2, Plus
+  User, Trash2, Plus, Search, Shield, AlertTriangle
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -24,9 +24,16 @@ export default function Page() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [lembreDeMim, setLembreDeMim] = useState(false); // Checkbox estado
 
-  // Multi-contas (localStorage)
-  const [contasSalvas, setContasSalvas] = useState([]); // Lista de usuários salvos
-  const [modoSelecaoConta, setModoSelecaoConta] = useState(false); // Se true, mostra a lista de contas
+  // Multi-contas (localStorage) + melhorias
+  const [contasSalvas, setContasSalvas] = useState([]);
+  const [modoSelecaoConta, setModoSelecaoConta] = useState(false);
+  const [termoBuscaConta, setTermoBuscaConta] = useState("");
+  const [contaParaRemover, setContaParaRemover] = useState(null);
+  const [erroLogin, setErroLogin] = useState("");
+  const [contaSelecionadaInfo, setContaSelecionadaInfo] = useState(null);
+
+  // Ref para foco no input de senha
+  const senhaInputRef = useRef(null);
 
   // Primeiro Acesso (Troca de Senha)
   const [modalNovaSenha, setModalNovaSenha] = useState(false);
@@ -77,16 +84,71 @@ export default function Page() {
   };
 
   // ==========================================================
-  // 3. EFEITO: VERIFICAÇÃO DE SESSÃO + CARREGAR CONTAS SALVAS
+  // 2.1 FUNÇÕES AUXILIARES (TEMA + CONTAS)
+  // ==========================================================
+  const toggleTema = () => {
+    const novoTema = !temaEscuro;
+    setTemaEscuro(novoTema);
+    localStorage.setItem("point_theme", novoTema ? "dark" : "light");
+  };
+
+  function getIniciais(nome) {
+    if (!nome) return "US";
+    const partes = String(nome).trim().split(" ").filter(Boolean);
+    if (partes.length === 0) return "US";
+    if (partes.length === 1) return partes[0].substring(0, 2).toUpperCase();
+    return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+  }
+
+  function normalizarConta(c) {
+    return {
+      nome: c?.nome || "Usuário",
+      email: c?.email || "",
+      tipo: c?.tipo || "user",
+      lastUsed: c?.lastUsed || 0,
+    };
+  }
+
+  function salvarContaNoDispositivo(userObj, listaAtual) {
+    const nova = {
+      nome: userObj.nome,
+      email: userObj.email,
+      tipo: userObj.tipo || "user",
+      lastUsed: Date.now(),
+    };
+    const base = (listaAtual || []).map(normalizarConta).filter(c => c.email && c.email !== nova.email);
+    base.unshift(nova);
+    base.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+    localStorage.setItem("point_users", JSON.stringify(base));
+    setContasSalvas(base);
+    return base;
+  }
+
+  function atualizarUltimoUso(emailUser, listaAtual = contasSalvas) {
+    const novaLista = (listaAtual || []).map(normalizarConta).map(c =>
+      c.email === emailUser ? { ...c, lastUsed: Date.now() } : c
+    );
+    novaLista.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+    setContasSalvas(novaLista);
+    localStorage.setItem("point_users", JSON.stringify(novaLista));
+  }
+
+  // ==========================================================
+  // 3. EFEITO: CARREGA TEMA, CONTAS SALVAS E VERIFICA SESSÃO
   // ==========================================================
   useEffect(() => {
-    // 1) Carrega contas salvas no navegador
+    // Tema salvo
+    const temaSalvo = localStorage.getItem("point_theme");
+    if (temaSalvo === "dark") setTemaEscuro(true);
+
+    // Contas salvas
     let salvos = [];
     try {
-      salvos = JSON.parse(localStorage.getItem("point_users") || "[]");
+      salvos = JSON.parse(localStorage.getItem("point_users") || "[]").map(normalizarConta);
     } catch (e) {
       salvos = [];
     }
+    salvos.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
     setContasSalvas(salvos);
 
     async function checarSessao() {
@@ -95,25 +157,22 @@ export default function Page() {
         const data = await res.json();
 
         if (data.success && data.user) {
-          // Se já tem sessão, entra direto
+          // Sempre atualiza a lista do PC
+          const listaAtualizada = salvarContaNoDispositivo(data.user, salvos);
+
+          // Se for admin, manda pro /admin
           if (data.user.tipo === "admin") {
+            // também marca último uso
+            atualizarUltimoUso(data.user.email, listaAtualizada);
             router.push("/admin");
             return;
           }
 
           setUser(data.user);
           carregarDadosUsuario(data.user.id);
+          atualizarUltimoUso(data.user.email, listaAtualizada);
           toast.success(`Bem-vindo de volta, ${data.user.nome.split(" ")[0]}!`);
-
-          // Atualiza a lista de salvos (garante dados frescos)
-          const novaLista = salvos.filter(c => c.email !== data.user.email);
-          novaLista.push({ nome: data.user.nome, email: data.user.email });
-          localStorage.setItem("point_users", JSON.stringify(novaLista));
-          setContasSalvas(novaLista);
-
-          setModoSelecaoConta(false);
         } else {
-          // Se NÃO tem sessão, mas tem contas salvas, mostra a tela de escolha
           if (salvos.length > 0) setModoSelecaoConta(true);
         }
       } catch (e) {
@@ -195,25 +254,22 @@ export default function Page() {
   // ==========================================================
   function selecionarContaSalva(conta) {
     setEmail(conta.email);
-    setSenha("");
-    setMostrarSenha(false);
-
+    setContaSelecionadaInfo(conta);
     setModoSelecaoConta(false);
     setViewRecuperar(false);
     setPassoRecuperar(1);
+    setErroLogin("");
+    setSenha("");
+    setMostrarSenha(false);
+
+    setTimeout(() => {
+      if (senhaInputRef.current) senhaInputRef.current.focus();
+    }, 50);
   }
 
-  function removerContaSalva(emailParaRemover, e) {
+  function removerContaSalva(e, conta) {
     e.stopPropagation();
-    const novaLista = contasSalvas.filter(c => c.email !== emailParaRemover);
-    setContasSalvas(novaLista);
-    localStorage.setItem("point_users", JSON.stringify(novaLista));
-
-    if (novaLista.length === 0) {
-      setModoSelecaoConta(false);
-      setEmail("");
-      setSenha("");
-    }
+    setContaParaRemover(conta);
   }
 
   function limparTodasContasSalvas() {
@@ -225,49 +281,46 @@ export default function Page() {
     setModoSelecaoConta(false);
     setEmail("");
     setSenha("");
+    setContaSelecionadaInfo(null);
     toast.success("Lista de contas removida deste navegador.");
-  }
-
-  function getInitial(nome) {
-    if (!nome) return "?";
-    const t = String(nome).trim();
-    if (!t) return "?";
-    return t[0].toUpperCase();
   }
 
   // ==========================================================
   // 6. FUNÇÕES DE AUTENTICAÇÃO (API)
   // ==========================================================
-
   async function handleLogin() {
+    setErroLogin("");
     try {
       const res = await fetch("/api/auth", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, senha, lembreDeMim }),
       });
       const data = await res.json();
 
       if (data.success) {
-        // Salva Nome + Email no navegador (NÃO SALVAMOS SENHA)
-        const novaLista = contasSalvas.filter(c => c.email !== data.user.email);
-        novaLista.push({ nome: data.user.nome, email: data.user.email });
-        localStorage.setItem("point_users", JSON.stringify(novaLista));
-        setContasSalvas(novaLista);
-        setModoSelecaoConta(false);
+        // Salva conta no PC (sem senha)
+        const novaLista = salvarContaNoDispositivo(data.user, contasSalvas);
 
-        if (data.user.tipo === 'admin') {
-          router.push('/admin');
+        if (data.user.tipo === "admin") {
+          atualizarUltimoUso(data.user.email, novaLista);
+          router.push("/admin");
           return;
         }
+
         if (data.user.primeiroAcesso) {
           setUser(data.user);
           setModalNovaSenha(true);
           return;
         }
+
         setUser(data.user);
         carregarDadosUsuario(data.user.id);
+        atualizarUltimoUso(data.user.email, novaLista);
       } else {
-        toast.error(data.message);
+        setErroLogin(data.message || "E-mail ou senha inválidos.");
+        setSenha("");
+        if (senhaInputRef.current) senhaInputRef.current.focus();
       }
     } catch (e) {
       toast.error("Erro de conexão com o servidor.");
@@ -280,6 +333,8 @@ export default function Page() {
 
     setSenha("");
     setMostrarSenha(false);
+    setErroLogin("");
+    setContaSelecionadaInfo(null);
 
     if (contasSalvas.length > 0) {
       setModoSelecaoConta(true);
@@ -296,6 +351,7 @@ export default function Page() {
     try {
       const res = await fetch("/api/auth/nova-senha", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ usuarioId: user.id, novaSenha: novaSenhaInput })
       });
       const data = await res.json();
@@ -316,7 +372,11 @@ export default function Page() {
   async function enviarCodigoRecuperacao() {
     if (!emailRecuperar) return toast.warning("Digite seu e-mail cadastrado.");
     try {
-      const res = await fetch("/api/auth/recuperar", { method: "POST", body: JSON.stringify({ email: emailRecuperar }) });
+      const res = await fetch("/api/auth/recuperar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailRecuperar })
+      });
       const data = await res.json();
 
       if (data.success) {
@@ -336,6 +396,7 @@ export default function Page() {
     try {
       const res = await fetch("/api/auth/nova-senha", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: emailRecuperar,
           codigo: codigoRecuperar,
@@ -353,6 +414,7 @@ export default function Page() {
         setCodigoRecuperar("");
         setNovaSenhaRecuperar("");
         setEmail("");
+        setContaSelecionadaInfo(null);
         setModoSelecaoConta(contasSalvas.length > 0);
       } else {
         toast.error(data.message);
@@ -366,7 +428,6 @@ export default function Page() {
   // ==========================================================
   // 7. FUNÇÕES DE DADOS (PONTO E MENSAGENS)
   // ==========================================================
-
   async function confirmarRegistro() {
     if (!tipoSelecionado) return;
 
@@ -383,6 +444,7 @@ export default function Page() {
         try {
           const res = await fetch("/api/ponto", {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               usuarioId: user.id,
               nome: user.nome,
@@ -442,6 +504,7 @@ export default function Page() {
     try {
       const res = await fetch('/api/mensagens', {
         method: 'POST',
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ usuarioId: user.id, dataIso, texto })
       });
       const data = await res.json();
@@ -481,6 +544,49 @@ export default function Page() {
   if (!user || modalNovaSenha) {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center font-sans ${cores.bg} p-4`}>
+
+        {/* MODAL DE CONFIRMAÇÃO DE REMOÇÃO (NOVO) */}
+        {contaParaRemover && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+              <div className="flex items-center gap-3 mb-4 text-red-600 font-bold text-lg">
+                <AlertTriangle /> Remover Conta?
+              </div>
+              <p className="text-gray-600 mb-6 text-sm">
+                Deseja esquecer a conta <b>{contaParaRemover.nome}</b> deste dispositivo?
+              </p>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setContaParaRemover(null)} className="px-4 py-2 border rounded text-sm font-bold">
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    const novaLista = contasSalvas.filter(c => c.email !== contaParaRemover.email);
+                    setContasSalvas(novaLista);
+                    localStorage.setItem("point_users", JSON.stringify(novaLista));
+                    setContaParaRemover(null);
+
+                    if (contaSelecionadaInfo?.email === contaParaRemover.email) {
+                      setContaSelecionadaInfo(null);
+                      setEmail("");
+                      setSenha("");
+                    }
+                    if (novaLista.length === 0) {
+                      setModoSelecaoConta(false);
+                      setEmail("");
+                      setContaSelecionadaInfo(null);
+                    } else {
+                      setModoSelecaoConta(true);
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-bold"
+                >
+                  Sim, Remover
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {modalNovaSenha && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
@@ -525,79 +631,107 @@ export default function Page() {
         {!modalNovaSenha && (
           <div className={`${cores.card} p-8 rounded shadow-md w-full max-w-md border-t-4 border-[#1351b4] relative`}>
 
-            {/* Toggle tema no Login */}
+            {/* Toggle tema no Login (SALVO) */}
             <button
-              onClick={() => setTemaEscuro(!temaEscuro)}
+              onClick={toggleTema}
               className={`absolute top-4 right-4 p-2 rounded-full transition ${temaEscuro ? "bg-white/10 hover:bg-white/20 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
               title={temaEscuro ? "Tema claro" : "Tema escuro"}
             >
               {temaEscuro ? <Sun size={16} /> : <Moon size={16} />}
             </button>
 
-            {/* TELA 1: LISTA DE CONTAS */}
+            {/* ESTADO 1: LISTA DE CONTAS */}
             {modoSelecaoConta && !viewRecuperar ? (
               <div className="animate-fade-in">
-                <h1 className="text-2xl font-bold text-[#1351b4] mb-6 flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-[#1351b4] mb-4 flex items-center gap-2">
                   <span className="font-black text-3xl">Point</span>
                 </h1>
-
                 <p className={`${temaEscuro ? "text-gray-400" : "text-gray-500"} text-sm mb-4 font-semibold`}>
                   Escolha uma conta
                 </p>
 
-                <div className="space-y-3 mb-6">
-                  {contasSalvas.map((conta, idx) => {
-                    const cardBase = temaEscuro
-                      ? "bg-[#1f1f1f] border-gray-700 hover:bg-[#2a2a2a] hover:border-blue-500"
-                      : "bg-white border-gray-200 hover:bg-gray-50 hover:border-blue-300";
+                {/* Busca rápida */}
+                {contasSalvas.length > 3 && (
+                  <div className="relative mb-4">
+                    <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                    <input
+                      type="text"
+                      placeholder="Buscar conta..."
+                      className={`w-full pl-9 p-2 border rounded text-sm outline-none focus:border-blue-500 ${temaEscuro ? "bg-[#2c2c2c] text-white border-gray-700" : "bg-gray-50"}`}
+                      value={termoBuscaConta}
+                      onChange={(e) => setTermoBuscaConta(e.target.value)}
+                    />
+                  </div>
+                )}
 
-                    const textoNome = temaEscuro ? "text-gray-100" : "text-gray-800";
-                    const textoEmail = temaEscuro ? "text-gray-400" : "text-gray-500";
-                    const avatarBg = temaEscuro ? "bg-white/10 text-gray-100" : "bg-gray-200 text-gray-700";
-
-                    return (
+                <div className="space-y-3 mb-6 max-h-[300px] overflow-y-auto pr-1">
+                  {contasSalvas
+                    .filter(c => {
+                      const t = termoBuscaConta.toLowerCase();
+                      if (!t) return true;
+                      return (c.nome || "").toLowerCase().includes(t) || (c.email || "").toLowerCase().includes(t);
+                    })
+                    .map((conta, idx) => (
                       <div
                         key={idx}
                         onClick={() => selecionarContaSalva(conta)}
-                        className={`flex items-center justify-between p-4 border rounded cursor-pointer transition group shadow-sm hover:shadow-md ${cardBase}`}
+                        className={`flex items-center justify-between p-3 border rounded cursor-pointer transition group shadow-sm hover:shadow-md hover:border-blue-300 relative ${
+                          temaEscuro ? "bg-[#1f1f1f] border-gray-700 hover:bg-[#2a2a2a]" : "bg-white border-gray-200 hover:bg-gray-50"
+                        }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`${avatarBg} w-10 h-10 rounded-full flex items-center justify-center font-black`}>
-                            {getInitial(conta.nome)}
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
+                            conta.tipo === "admin" ? "bg-[#071d41] text-white" : temaEscuro ? "bg-white/10 text-gray-100" : "bg-blue-100 text-blue-700"
+                          }`}>
+                            {getIniciais(conta.nome)}
                           </div>
+
                           <div className="text-left">
-                            <p className={`font-bold leading-tight ${textoNome}`}>{conta.nome}</p>
-                            <p className={`text-xs ${textoEmail}`}>{conta.email}</p>
+                            <div className="flex items-center gap-2">
+                              <p className={`font-bold leading-tight text-sm ${temaEscuro ? "text-gray-100" : "text-gray-800"}`}>
+                                {conta.nome}
+                              </p>
+                              {conta.tipo === "admin" && (
+                                <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-bold">
+                                  ADMIN
+                                </span>
+                              )}
+                            </div>
+                            <p className={`text-xs ${temaEscuro ? "text-gray-400" : "text-gray-500"}`}>{conta.email}</p>
                           </div>
                         </div>
 
                         <button
-                          onClick={(e) => removerContaSalva(conta.email, e)}
-                          className={`p-2 rounded-full transition ${temaEscuro
-                            ? "text-gray-500 hover:text-red-400 hover:bg-red-500/10"
-                            : "text-gray-300 hover:text-red-500 hover:bg-red-50"
+                          onClick={(e) => removerContaSalva(e, conta)}
+                          className={`p-2 rounded-full transition ${
+                            temaEscuro ? "text-gray-500 hover:text-red-300 hover:bg-red-500/10" : "text-gray-300 hover:text-red-500 hover:bg-red-50"
                           }`}
                           title="Remover desta lista"
                         >
-                          <Trash2 size={18} />
+                          <Trash2 size={16} />
                         </button>
                       </div>
-                    );
-                  })}
+                    ))}
                 </div>
 
                 <div
-                  onClick={() => { setModoSelecaoConta(false); setEmail(""); setSenha(""); }}
-                  className={`flex items-center gap-3 p-3 cursor-pointer rounded transition font-medium ${
+                  onClick={() => {
+                    setModoSelecaoConta(false);
+                    setEmail("");
+                    setSenha("");
+                    setContaSelecionadaInfo(null);
+                    setErroLogin("");
+                  }}
+                  className={`flex items-center gap-3 p-3 cursor-pointer rounded transition font-medium border border-dashed ${
                     temaEscuro
-                      ? "text-gray-300 hover:text-blue-300 hover:bg-blue-500/10"
-                      : "text-gray-600 hover:text-[#1351b4] hover:bg-blue-50"
+                      ? "text-gray-300 hover:text-blue-300 hover:bg-blue-500/10 border-gray-700"
+                      : "text-gray-600 hover:text-[#1351b4] hover:bg-blue-50 border-gray-300 hover:border-blue-400"
                   }`}
                 >
-                  <div className={`${temaEscuro ? "bg-white/10" : "bg-gray-100"} p-2 rounded-full`}>
-                    <Plus size={20} />
+                  <div className={`${temaEscuro ? "bg-white/10" : "bg-gray-100"} p-1.5 rounded-full`}>
+                    <Plus size={18} />
                   </div>
-                  <span>Usar outra conta</span>
+                  <span className="text-sm">Usar outra conta</span>
                 </div>
 
                 {contasSalvas.length > 0 && (
@@ -614,14 +748,18 @@ export default function Page() {
                   </button>
                 )}
               </div>
-
             ) : (
-              /* TELA 2: LOGIN PADRÃO */
+              /* ESTADO 2: LOGIN COM SENHA */
               !viewRecuperar ? (
                 <div className="animate-fade-in">
                   {contasSalvas.length > 0 && (
                     <button
-                      onClick={() => { setModoSelecaoConta(true); setSenha(""); }}
+                      onClick={() => {
+                        setModoSelecaoConta(true);
+                        setErroLogin("");
+                        setContaSelecionadaInfo(null);
+                        setSenha("");
+                      }}
                       className={`mb-4 text-xs flex items-center gap-1 transition ${
                         temaEscuro ? "text-gray-400 hover:text-blue-300" : "text-gray-500 hover:text-blue-600"
                       }`}
@@ -634,37 +772,62 @@ export default function Page() {
                     <span className="font-black text-3xl">Point</span> Acesso
                   </h1>
 
-                  {/* Mostra quem está tentando logar */}
-                  {email && contasSalvas.find(c => c.email === email) && (
-                    <div className={`mb-4 flex items-center gap-2 p-2 rounded text-sm border ${
-                      temaEscuro
-                        ? "bg-blue-500/10 text-blue-200 border-blue-500/20"
-                        : "bg-blue-50 text-blue-800 border-blue-100"
+                  {/* Card “Entrando como...” */}
+                  {(contaSelecionadaInfo || (email && contasSalvas.find(c => c.email === email))) && (
+                    <div className={`mb-6 flex items-center gap-3 p-3 rounded-lg border ${
+                      temaEscuro ? "bg-blue-500/10 text-blue-200 border-blue-500/20" : "bg-blue-50 text-blue-900 border-blue-100"
                     }`}>
-                      <User size={14} /> Entrando como <b>{contasSalvas.find(c => c.email === email).nome}</b>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                        temaEscuro ? "bg-white/10" : "bg-blue-200 text-blue-800"
+                      }`}>
+                        {getIniciais(contaSelecionadaInfo?.nome || contasSalvas.find(c => c.email === email)?.nome)}
+                      </div>
+                      <div>
+                        <p className={`text-xs font-bold ${temaEscuro ? "text-blue-200" : "text-blue-500"}`}>Entrando como:</p>
+                        <p className="text-sm font-bold leading-tight">
+                          {contaSelecionadaInfo?.nome || contasSalvas.find(c => c.email === email)?.nome}
+                        </p>
+                      </div>
                     </div>
                   )}
 
-                  <input
-                    className={`w-full p-3 mb-4 border rounded focus:outline-none focus:ring-2 focus:ring-[#1351b4] ${cores.input}`}
-                    type="email"
-                    placeholder="Seu E-mail"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                  />
-
-                  <div className="relative mb-4">
+                  {/* Se escolheu conta salva, esconde input de email */}
+                  {!contaSelecionadaInfo && (
                     <input
-                      className={`w-full p-3 border rounded focus:outline-none focus:ring-2 focus:ring-[#1351b4] ${cores.input} pr-10`}
+                      className={`w-full p-3 mb-4 border rounded focus:outline-none focus:ring-2 focus:ring-[#1351b4] ${cores.input}`}
+                      type="email"
+                      placeholder="Seu E-mail"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                    />
+                  )}
+
+                  <div className="relative mb-2">
+                    <input
+                      ref={senhaInputRef}
+                      className={`w-full p-3 border rounded focus:outline-none focus:ring-2 focus:ring-[#1351b4] ${cores.input} pr-10 ${erroLogin ? "border-red-500 focus:ring-red-200" : ""}`}
                       type={mostrarSenha ? "text" : "password"}
                       placeholder="Senha"
                       value={senha}
-                      onChange={e => setSenha(e.target.value)}
+                      onChange={e => { setSenha(e.target.value); setErroLogin(""); }}
+                      onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                       autoFocus={!!email}
                     />
                     <button onClick={() => setMostrarSenha(!mostrarSenha)} className="absolute right-3 top-3 text-gray-400 hover:text-[#1351b4] transition">
                       {mostrarSenha ? <EyeOff size={20} /> : <Eye size={20} />}
                     </button>
+                  </div>
+
+                  {erroLogin && (
+                    <div className="flex items-center gap-2 text-red-600 text-xs mb-4">
+                      <AlertTriangle size={14} /> {erroLogin}
+                    </div>
+                  )}
+
+                  <div className={`flex items-center gap-1.5 text-[10px] mb-4 p-2 rounded border ${
+                    temaEscuro ? "text-gray-300 bg-white/5 border-gray-700" : "text-gray-400 bg-gray-50 border-gray-200"
+                  }`}>
+                    <Shield size={12} /> A senha não é salva.
                   </div>
 
                   <div className="flex items-center justify-between mb-6">
@@ -681,21 +844,27 @@ export default function Page() {
                         {lembreDeMim && <CheckCircle size={14} className="text-white" />}
                       </div>
                       <span className={`text-sm font-medium ${temaEscuro ? "text-gray-300" : "text-gray-600"}`}>
-                        Lembrar por 30 dias
+                        Lembrar de mim
                       </span>
                     </label>
 
-                    <button onClick={() => setViewRecuperar(true)} className={`text-xs hover:underline transition ${temaEscuro ? "text-gray-400 hover:text-blue-300" : "text-gray-500 hover:text-[#1351b4]"}`}>
+                    <button
+                      onClick={() => setViewRecuperar(true)}
+                      className={`text-xs hover:underline transition ${temaEscuro ? "text-gray-400 hover:text-blue-300" : "text-gray-500 hover:text-[#1351b4]"}`}
+                    >
                       Esqueci a senha
                     </button>
                   </div>
 
-                  <button onClick={handleLogin} className="w-full bg-[#1351b4] text-white font-bold py-3 rounded-full hover:bg-[#0c3b85] transition shadow-md">
-                    ENTRAR
+                  <button
+                    onClick={handleLogin}
+                    className="w-full bg-[#1351b4] text-white font-bold py-3 rounded-full hover:bg-[#0c3b85] transition shadow-md flex items-center justify-center gap-2"
+                  >
+                    ENTRAR <ChevronRight size={16} />
                   </button>
                 </div>
               ) : (
-                /* TELA 3: RECUPERAÇÃO (teu código original) */
+                /* TELA 3: RECUPERAÇÃO */
                 <>
                   <h1 className={`text-xl font-bold mb-2 flex items-center gap-2 ${temaEscuro ? "text-gray-100" : "text-[#071d41]"}`}>
                     <Lock size={20} /> Recuperar Senha
@@ -789,7 +958,7 @@ export default function Page() {
             SAIR
           </button>
 
-          <div onClick={() => setTemaEscuro(!temaEscuro)} className="flex items-center gap-1 text-xs cursor-pointer select-none hover:opacity-80">
+          <div onClick={toggleTema} className="flex items-center gap-1 text-xs cursor-pointer select-none hover:opacity-80">
             <div className={`${temaEscuro ? 'bg-yellow-400 text-black' : 'bg-white text-[#071d41]'} rounded-full p-1 transition-all`}>
               {temaEscuro ? <Sun size={14} /> : <Moon size={14} />}
             </div>
@@ -953,7 +1122,6 @@ export default function Page() {
 // ==========================================================
 // 10. COMPONENTES AUXILIARES
 // ==========================================================
-
 function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
   const [aberto, setAberto] = useState(false);
   const [modoEdicaoMsg, setModoEdicaoMsg] = useState(false);
