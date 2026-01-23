@@ -1,6 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
+import * as XLSX from "xlsx";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
+
 import {
   LayoutDashboard,
   FileText,
@@ -33,18 +45,13 @@ import {
   ShoppingBag,
   DollarSign,
   Image as ImageIcon,
+
+  // ✅ ASSINATURA (NOVO)
+  CreditCard,
+  AlertTriangle,
+  Copy,
+  Loader2,
 } from "lucide-react";
-import { toast } from "sonner";
-import * as XLSX from "xlsx";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 
 // =======================
 // HELPERS DE DATA (ISO LOCAL)
@@ -54,7 +61,6 @@ function toIsoLocalFromYMD(ano, mesIndex, dia) {
   const d = String(dia).padStart(2, "0");
   return `${ano}-${m}-${d}`;
 }
-
 function startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
@@ -63,56 +69,95 @@ export default function AdminPage() {
   // ==================================================================================
   // 1. ESTADOS GERAIS DA APLICAÇÃO
   // ==================================================================================
-
-  // Controle de Navegação e Loading
-  const [view, setView] = useState("dashboard"); // Opções: 'dashboard', 'relatorios', 'consumos'
+  const [view, setView] = useState("dashboard"); // dashboard | relatorios | consumos | assinatura
   const [loading, setLoading] = useState(true);
 
-  // Dados do Admin Logado
   const [adminUser, setAdminUser] = useState({
     id: null,
     nome: "Carregando...",
     email: "...",
     cargo: "Gestor",
+    role: "ADMIN",
   });
 
- // Dados Principais (Banco de Dados Local)
   const [usuarios, setUsuarios] = useState([]);
-  const [empresaId, setEmpresaId] = useState(null); // <--- O NOVO CAMPO
+  const [empresaId, setEmpresaId] = useState(null);
+
+  // ✅ DADOS DA EMPRESA (ASSINATURA)
+  const [empresa, setEmpresa] = useState(null);
+
   const [pontosGerais, setPontosGerais] = useState([]);
   const [folgasGerais, setFolgasGerais] = useState([]);
   const [todasMensagens, setTodasMensagens] = useState([]);
   const [dadosGrafico, setDadosGrafico] = useState([]);
-  // Notificações e Atividades Recentes
+
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
   const [notificacoes, setNotificacoes] = useState([]);
 
-  // Busca e Seleção de Usuário
   const [termoBusca, setTermoBusca] = useState("");
   const [usuarioSelecionado, setUsuarioSelecionado] = useState(null);
   const [relatorioDetalhado, setRelatorioDetalhado] = useState(null);
 
-  // Modais (Pop-ups)
   const [modalNovoUsuario, setModalNovoUsuario] = useState(false);
   const [modalEditarUsuario, setModalEditarUsuario] = useState(false);
   const [modalPerfilAdmin, setModalPerfilAdmin] = useState(false);
 
-  // Formulários
   const [novoUser, setNovoUser] = useState({ nome: "", email: "", cargo: "" });
   const [usuarioParaEditar, setUsuarioParaEditar] = useState({});
   const [adminParaEditar, setAdminParaEditar] = useState({});
 
-  // Filtros de Data (Ficha Individual)
   const [mesFicha, setMesFicha] = useState(new Date().getMonth());
   const [anoFicha, setAnoFicha] = useState(2026);
 
-  // Filtros de Data (Relatório Geral)
   const [mesRelatorio, setMesRelatorio] = useState(new Date().getMonth());
   const [anoRelatorio, setAnoRelatorio] = useState(2026);
   const [dadosRelatorio, setDadosRelatorio] = useState([]);
 
   // ==================================================================================
-  // NOVO MÓDULO: CONSUMOS
+  // 2. ASSINATURA / PIX (NOVO)
+  // ==================================================================================
+  const [loadingPix, setLoadingPix] = useState(false);
+  const [pixData, setPixData] = useState(null);
+
+  async function gerarPagamento(plano) {
+    if (!empresaId) return toast.error("EmpresaId não encontrado.");
+    setLoadingPix(true);
+    setPixData(null);
+
+    try {
+      const res = await fetch("/api/pagamento/criar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empresaId, plano }),
+      });
+
+      const data = await res.json();
+
+      if (data?.success) {
+        setPixData(data);
+        toast.success("Cobrança gerada! Pague para renovar.");
+      } else {
+        toast.error("Erro ao gerar: " + (data?.error || "desconhecido"));
+      }
+    } catch (e) {
+      toast.error("Erro de conexão.");
+    } finally {
+      setLoadingPix(false);
+    }
+  }
+
+  async function atualizarEmpresa(idFinal) {
+    try {
+      const resEmp = await fetch(`/api/empresa?id=${idFinal}`);
+      const dadosEmpresa = await resEmp.json();
+      setEmpresa(dadosEmpresa);
+    } catch (e) {
+      console.warn("Falha ao atualizar empresa:", e);
+    }
+  }
+
+  // ==================================================================================
+  // 3. MÓDULO: CONSUMOS
   // ==================================================================================
   const [listaConsumos, setListaConsumos] = useState([]);
   const [colaboradorConsumo, setColaboradorConsumo] = useState("");
@@ -123,94 +168,86 @@ export default function AdminPage() {
     imagemUrl: "",
   });
   const [consumoEditando, setConsumoEditando] = useState(null);
-// ==================================================================================
-  // 2. CARREGAMENTO INICIAL DE DADOS (FETCH API)
+
   // ==================================================================================
+  // 4. CARREGAMENTO INICIAL (AUTH) + RELOAD EM MÊS/ANO
+  // ==================================================================================
+  useEffect(() => {
+    async function init() {
+      try {
+        setLoading(true);
+
+        // ✅ Preferência: valida sessão pelo servidor
+        let idEmp = null;
+        let admin = null;
+
+        try {
+          const resAuth = await fetch("/api/auth");
+          const dataAuth = await resAuth.json();
+
+          if (
+            dataAuth?.success &&
+            dataAuth?.user &&
+            (dataAuth.user.role === "ADMIN" ||
+              dataAuth.user.role === "SUPER_ADMIN" ||
+              dataAuth.user.tipo === "admin")
+          ) {
+            admin = dataAuth.user;
+            idEmp = dataAuth.user.empresaId || null;
+          }
+        } catch (_) {
+          // ignora e tenta fallback
+        }
+
+        // ✅ Fallback (se você ainda usa localStorage)
+        if (!idEmp) {
+          const dadosUsuario = JSON.parse(
+            localStorage.getItem("point_user") || "{}"
+          );
+          idEmp = dadosUsuario?.empresaId || null;
+        }
+
+        if (!idEmp) {
+          window.location.href = "/";
+          return;
+        }
+
+        if (admin) setAdminUser(admin);
+        setEmpresaId(idEmp);
+
+        // carrega tudo
+        await carregarDados(idEmp);
+      } catch (e) {
+        console.error("Erro no init:", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    // A. Recupera dados do login
-    const dadosUsuario = JSON.parse(localStorage.getItem('point_user') || '{}');
-
-    // B. Verifica se tem o ID da empresa
-    if (dadosUsuario?.empresaId) {
-        setEmpresaId(dadosUsuario.empresaId); 
-        // C. Carrega passando o ID
-        carregarDados(dadosUsuario.empresaId);
-    } else {
-        window.location.href = '/'; // Segurança
-    }
+    if (empresaId) carregarDados(empresaId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mesRelatorio, anoRelatorio]);
 
-
+  // ==================================================================================
+  // 5. CARREGAR DADOS (ÚNICA FUNÇÃO - SEM DUPLICAR)
+  // ==================================================================================
   async function carregarDados(idDaEmpresa) {
-    // Garante que temos o ID (prioridade para o parâmetro, depois o estado)
     const idFinal = idDaEmpresa || empresaId;
-
-    if (!idFinal) return; 
+    if (!idFinal) return;
 
     try {
       setLoading(true);
 
-      // ⚠️ AQUI ESTÁ A CORREÇÃO PRINCIPAL:
-      // Adicionamos ?empresaId=${idFinal} em todos os links
-      const [resUsers, resMsgs, resNotif] = await Promise.all([
-        fetch(`/api/usuarios?empresaId=${idFinal}`),    // <--- CORRIGIDO
-        fetch(`/api/mensagens?empresaId=${idFinal}`),   // <--- CORRIGIDO
-        fetch(`/api/notificacoes?empresaId=${idFinal}`),// <--- CORRIGIDO
-      ]);
-
-      const dataUsers = await resUsers.json();
-      
-      // Atualiza os estados (se as respostas vierem como array)
-      if (Array.isArray(dataUsers)) setUsuarios(dataUsers);
-      
-      // ... processamento dos outros dados (mensagens, notificacoes) ...
-      const dataMsgs = await resMsgs.json();
-      if (Array.isArray(dataMsgs)) setTodasMensagens(dataMsgs);
-
-      // --- Identificar Admin (ATENÇÃO: Mudou de 'tipo' para 'role' no banco novo) ---
-      const adminEncontrado = Array.isArray(dataUsers) 
-        ? dataUsers.find((u) => u.role === "ADMIN" || u.role === "SUPER_ADMIN" || u.cargo === "admin") 
-        : null;
-
-      if (adminEncontrado) {
-        setAdminUser(adminEncontrado);
-      } else {
-        // Fallback visual apenas
-        setAdminUser({
-          nome: "Gestor",
-          email: "admin@empresa.com",
-          role: "ADMIN",
-          id: null,
-        });
-      }
-      
-      // Continua o código de carregar pontos e folgas...
-      // Lembre-se de passar o ID nas outras funções também se elas forem chamadas aqui
-      // ex: carregarFolgas(idFinal);
-
-    } catch (error) {
-        console.error("Erro ao carregar dados:", error);
-    } finally {
-        setLoading(false);
-    }
-  }
-
-    async function carregarDados(idDaEmpresa) {
-    // 1. Garante que temos o ID da empresa
-    const idFinal = idDaEmpresa || empresaId;
-    if (!idFinal) return; 
-
-    try {
-      setLoading(true);
-
-      // 2. BUSCA TUDO DE UMA VEZ (Parallel Fetch)
-      // Adicionei a busca de 'folgas' aqui em cima para não precisar fazer loop depois
       const [resUsers, resMsgs, resNotif, resFolgas] = await Promise.all([
         fetch(`/api/usuarios?empresaId=${idFinal}`),
         fetch(`/api/mensagens?empresaId=${idFinal}`),
         fetch(`/api/notificacoes?empresaId=${idFinal}`),
-        fetch(`/api/folgas?empresaId=${idFinal}`) 
+        fetch(`/api/folgas?empresaId=${idFinal}`),
       ]);
 
       const dataUsers = await resUsers.json();
@@ -218,89 +255,77 @@ export default function AdminPage() {
       const dataNotif = await resNotif.json();
       const dataFolgas = await resFolgas.json();
 
-      // --- Define Usuários ---
+      // ✅ Empresa (assinatura)
+      await atualizarEmpresa(idFinal);
+
+      // --- Usuários ---
       if (Array.isArray(dataUsers)) {
-         setUsuarios(dataUsers);
-         
-         // Acha o admin para exibir no perfil
-         const admin = dataUsers.find(u => u.role === 'ADMIN' || u.role === 'SUPER_ADMIN' || u.cargo === 'admin');
-         if (admin) setAdminUser(admin);
+        setUsuarios(dataUsers);
+
+        const admin = dataUsers.find(
+          (u) =>
+            u.role === "ADMIN" || u.role === "SUPER_ADMIN" || u.cargo === "admin"
+        );
+        if (admin) setAdminUser(admin);
+      } else {
+        setUsuarios([]);
       }
-      
-      // --- Define Mensagens e Notificações ---
+
+      // --- Mensagens/Notificações ---
       setTodasMensagens(Array.isArray(dataMsg) ? dataMsg : []);
       setNotificacoes(Array.isArray(dataNotif) ? dataNotif : []);
 
-      // --- Processa Folgas (Do formato do banco para o App) ---
-      // O banco novo retorna objetos completos, mapeamos para o que o front usa
-      const folgasFormatadas = Array.isArray(dataFolgas) ? dataFolgas.map(f => ({
-          usuarioId: f.usuarioId,
-          dataIso: f.data // O campo data vem do banco
-      })) : [];
+      // --- Folgas ---
+      const folgasFormatadas = Array.isArray(dataFolgas)
+        ? dataFolgas.map((f) => ({ usuarioId: f.usuarioId, dataIso: f.data }))
+        : [];
       setFolgasGerais(folgasFormatadas);
 
-
-      // 3. BUSCAR PONTOS (Aqui mantemos o loop pois depende do filtro de Mês/Ano)
+      // --- Pontos (depende mês/ano) ---
       let todosPontos = [];
-      
       if (Array.isArray(dataUsers)) {
         for (let user of dataUsers) {
-            try {
-                // Busca pontos do usuário no mês selecionado
-                const resPonto = await fetch(`/api/ponto?userId=${user.id}&mes=${mesRelatorio}&ano=${anoRelatorio}`);
-                const dataPonto = await resPonto.json();
-                
-                if (Array.isArray(dataPonto)) {
-                    todosPontos = [...todosPontos, ...dataPonto];
-                }
-            } catch (err) {
-                console.warn(`Erro ao buscar pontos do user ${user.id}`, err);
-            }
+          try {
+            const resPonto = await fetch(
+              `/api/ponto?userId=${user.id}&mes=${mesRelatorio}&ano=${anoRelatorio}`
+            );
+            const dataPonto = await resPonto.json();
+            if (Array.isArray(dataPonto)) todosPontos = [...todosPontos, ...dataPonto];
+          } catch (err) {
+            console.warn(`Erro ao buscar pontos do user ${user.id}`, err);
+          }
         }
       }
       setPontosGerais(todosPontos);
 
-      // 4. Carregar Consumos (Passando o ID corretamente)
-      // Verifica se a função existe antes de chamar
-      if (typeof carregarConsumos === 'function') {
-          await carregarConsumos(idFinal); // <--- Correção: passando idFinal
-      }
+      // Consumos
+      await carregarConsumos(idFinal);
 
-      // 5. Atualiza Gráfico
-      if (typeof processarGrafico === 'function') {
-          processarGrafico(todosPontos);
-      }
-
-      setLoading(false);
-
+      // Gráfico
+      processarGrafico(todosPontos);
     } catch (error) {
       console.error("Erro geral ao carregar dados:", error);
-      // toast.error("Erro de conexão."); // Descomente se tiver toast
+    } finally {
       setLoading(false);
     }
   }
 
-      
   // --- FUNÇÃO PARA GERAR O GRÁFICO (Últimos 7 dias) ---
   function processarGrafico(pontos) {
     const hoje = new Date();
     const dados = [];
 
-    // Loop dos últimos 7 dias
     for (let i = 6; i >= 0; i--) {
       const d = new Date(hoje);
       d.setDate(hoje.getDate() - i);
       const dataStr = d.toLocaleDateString("pt-BR");
       const diaSemana = d.toLocaleDateString("pt-BR", { weekday: "short" });
 
-      // Filtra pontos do dia (todos os usuários)
       const pontosDoDia = pontos.filter(
         (p) => new Date(p.data).toLocaleDateString("pt-BR") === dataStr
       );
 
       let minutosTrabalhadosDia = 0;
-
-      // Agrupa por usuário para somar corretamente
       const usuariosIds = [...new Set(pontosDoDia.map((p) => p.usuarioId))];
 
       usuariosIds.forEach((uid) => {
@@ -316,8 +341,8 @@ export default function AdminPage() {
       });
 
       dados.push({
-        name: diaSemana, // Eixo X
-        horas: Math.round(minutosTrabalhadosDia / 60), // Eixo Y
+        name: diaSemana,
+        horas: Math.round(minutosTrabalhadosDia / 60),
         dataCompleta: dataStr,
       });
     }
@@ -325,16 +350,15 @@ export default function AdminPage() {
   }
 
   // ==================================================================================
-  // 3. LÓGICA DE RELATÓRIOS E CÁLCULOS
+  // 6. RELATÓRIOS
   // ==================================================================================
-
   useEffect(() => {
     if (pontosGerais.length > 0 && usuarios.length > 0) {
       gerarRelatorioMensal();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mesRelatorio, anoRelatorio, pontosGerais, usuarios, folgasGerais]);
 
-  // ✅ CORREÇÃO PRINCIPAL: não contar dias futuros na meta (evita saldo negativo no mês em andamento)
   function gerarRelatorioMensal() {
     const hoje = new Date();
     const hojeSemHora = startOfDay(hoje);
@@ -353,12 +377,8 @@ export default function AdminPage() {
         const dataStr = dataAtual.toLocaleDateString("pt-BR");
         const dataIso = toIsoLocalFromYMD(anoRelatorio, mesRelatorio, i);
 
-        // ✅ Se o dia é futuro, não entra na meta e não marca falta
-        if (dataAtualSemHora > hojeSemHora) {
-          continue;
-        }
+        if (dataAtualSemHora > hojeSemHora) continue;
 
-        // Verifica se é folga
         const ehFolga = folgasGerais.some(
           (f) => Number(f.usuarioId) === Number(user.id) && f.dataIso === dataIso
         );
@@ -370,7 +390,6 @@ export default function AdminPage() {
 
         diasTrabalhadosEsperados++;
 
-        // ✅ Comparação só pelo dia (pt-BR)
         const pontosDia = pontosGerais.filter(
           (p) =>
             Number(p.usuarioId) === Number(user.id) &&
@@ -380,21 +399,17 @@ export default function AdminPage() {
         const entrada = pontosDia.find((p) => p.tipo === "Entrada");
         const tevePonto = pontosDia.length > 0;
 
-        // Lógica de Falta (só se o dia já passou e não teve ponto)
         if (!tevePonto && dataAtualSemHora < hojeSemHora) {
           diasFaltosos.push(`${i}/${mesRelatorio + 1}`);
         }
 
-        // Calcula horas trabalhadas
         if (entrada) {
           const ultimaSaida = pontosDia.filter((p) => p.tipo === "Saída").pop();
           if (ultimaSaida) {
             let dtEntrada = new Date(entrada.data);
             let dtSaida = new Date(ultimaSaida.data);
 
-            if (dtSaida < dtEntrada) {
-              dtSaida.setDate(dtSaida.getDate() + 1);
-            }
+            if (dtSaida < dtEntrada) dtSaida.setDate(dtSaida.getDate() + 1);
 
             minutosTrabalhados += Math.floor((dtSaida - dtEntrada) / 60000);
           }
@@ -415,7 +430,7 @@ export default function AdminPage() {
         totalHoras: `${String(horasTotal).padStart(2, "0")}:${String(
           minsTotal
         ).padStart(2, "0")}`,
-        saldoMinutos: saldoMinutos,
+        saldoMinutos,
         diasFolga: diasFolgaCount,
         faltas: diasFaltosos,
       };
@@ -425,16 +440,15 @@ export default function AdminPage() {
   }
 
   // ==================================================================================
-  // LÓGICA DE CONSUMOS (CANTINA)
+  // 7. CONSUMOS
   // ==================================================================================
-
-  async function carregarConsumos() {
+  async function carregarConsumos(idFinal) {
     try {
-      const res = await fetch("/api/consumos");
+      const res = await fetch(`/api/consumos?empresaId=${idFinal}`);
       const data = await res.json();
       setListaConsumos(Array.isArray(data) ? data : []);
     } catch (e) {
-      console.error("Erro ao buscar consumos");
+      console.error("Erro ao buscar consumos", e);
     }
   }
 
@@ -448,6 +462,7 @@ export default function AdminPage() {
       valor: Number(novoConsumo.valor),
       imagemUrl: novoConsumo.imagemUrl,
       usuarioId: Number(colaboradorConsumo),
+      empresaId: empresaId,
     };
 
     try {
@@ -471,7 +486,7 @@ export default function AdminPage() {
         setModalNovoConsumo(false);
         setNovoConsumo({ nomeItem: "", valor: "", imagemUrl: "" });
         setConsumoEditando(null);
-        carregarConsumos();
+        carregarConsumos(empresaId);
       } else {
         toast.error("Erro ao salvar.");
       }
@@ -486,7 +501,7 @@ export default function AdminPage() {
         const res = await fetch(`/api/consumos?id=${id}`, { method: "DELETE" });
         if (res.ok) {
           toast.success("Removido.");
-          carregarConsumos();
+          carregarConsumos(empresaId);
         } else {
           toast.error("Erro ao remover.");
         }
@@ -506,17 +521,14 @@ export default function AdminPage() {
     setModalNovoConsumo(true);
   }
 
-  // Calcula total do funcionário selecionado
   const uidConsumo = Number(colaboradorConsumo);
   const totalConsumo = listaConsumos
     .filter((c) => Number(c.usuarioId) === uidConsumo)
     .reduce((acc, curr) => acc + Number(curr.valor || 0), 0);
 
   // ==================================================================================
-  // 4. AÇÕES, EMAIL E EXCEL
+  // 8. AÇÕES / EXCEL / EMAIL / USUÁRIOS
   // ==================================================================================
-
-  // -- FUNÇÃO PARA BAIXAR EXCEL --
   function handleExportarExcel() {
     const dadosExcel = [];
 
@@ -554,13 +566,11 @@ export default function AdminPage() {
     toast.success("Download do Excel iniciado!");
   }
 
-  // -- Abrir Modal de Edição do Admin --
   function abrirEdicaoAdmin() {
     setAdminParaEditar({ ...adminUser });
     setModalPerfilAdmin(true);
   }
 
-  // -- Salvar Edição do Admin no Banco --
   async function salvarPerfilAdmin() {
     if (!adminUser.id) return toast.error("ID do admin não encontrado.");
 
@@ -590,11 +600,8 @@ export default function AdminPage() {
     }
   }
 
-  // -- Envio de Email do Relatório --
   async function handleEnviarEmailRelatorio(colaborador) {
-    const toastId = toast.loading(
-      `Gerando relatório de ${colaborador.nome}...`
-    );
+    const toastId = toast.loading(`Gerando relatório de ${colaborador.nome}...`);
 
     try {
       const diasRelatorio = gerarDiasDoMesParaRelatorio(
@@ -608,50 +615,44 @@ export default function AdminPage() {
         .map(
           (dia) => `
             <tr>
-                <td style="border: 1px solid #ddd; padding: 8px;">${dia.dataFormatada}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.entrada}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.saida}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.horasTrabalhadas}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: center; color: ${
-                  dia.saldoPositivo || dia.saldo === "00:00" ? "green" : "red"
-                }; font-weight: bold;">${dia.saldo}</td>
-                <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.status}</td>
+              <td style="border: 1px solid #ddd; padding: 8px;">${dia.dataFormatada}</td>
+              <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.entrada}</td>
+              <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.saida}</td>
+              <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.horasTrabalhadas}</td>
+              <td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-weight: bold;">${dia.saldo}</td>
+              <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${dia.status}</td>
             </tr>
           `
         )
         .join("");
 
       const htmlBody = `
-            <div style="font-family: Arial, sans-serif;">
-                <h2>Relatório: ${colaborador.nome}</h2>
-                <p><strong>Referência:</strong> ${mesRelatorio + 1}/${anoRelatorio}</p>
-                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-                    <thead style="background-color: #f3f4f6;">
-                        <tr>
-                            <th style="border: 1px solid #ddd; padding: 8px;">Data</th>
-                            <th style="border: 1px solid #ddd; padding: 8px;">Ent</th>
-                            <th style="border: 1px solid #ddd; padding: 8px;">Sai</th>
-                            <th style="border: 1px solid #ddd; padding: 8px;">Total</th>
-                            <th style="border: 1px solid #ddd; padding: 8px;">Saldo</th>
-                            <th style="border: 1px solid #ddd; padding: 8px;">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>${linhasTabela}</tbody>
-                </table>
-                <p><strong>Saldo Final:</strong> ${formatarSaldo(
-                  colaborador.saldoMinutos
-                )}</p>
-            </div>
-          `;
+        <div style="font-family: Arial, sans-serif;">
+          <h2>Relatório: ${colaborador.nome}</h2>
+          <p><strong>Referência:</strong> ${mesRelatorio + 1}/${anoRelatorio}</p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead style="background-color: #f3f4f6;">
+              <tr>
+                <th style="border: 1px solid #ddd; padding: 8px;">Data</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Ent</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Sai</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Total</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Saldo</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Status</th>
+              </tr>
+            </thead>
+            <tbody>${linhasTabela}</tbody>
+          </table>
+          <p><strong>Saldo Final:</strong> ${formatarSaldo(colaborador.saldoMinutos)}</p>
+        </div>
+      `;
 
       const res = await fetch("/api/email/enviar-relatorio", {
         method: "POST",
         body: JSON.stringify({
           destinatario: adminUser.email,
-          assunto: `Ponto: ${colaborador.nome} - ${
-            mesRelatorio + 1
-          }/${anoRelatorio}`,
-          htmlBody: htmlBody,
+          assunto: `Ponto: ${colaborador.nome} - ${mesRelatorio + 1}/${anoRelatorio}`,
+          htmlBody,
         }),
       });
 
@@ -666,23 +667,18 @@ export default function AdminPage() {
     }
   }
 
-  // -- Criar Novo Usuário (CORRIGIDO) --
   async function handleNovoUsuario() {
-    // 1. Validação simples
     if (!novoUser.nome || !novoUser.email)
       return toast.warning("Preencha os campos obrigatórios.");
 
     try {
       const res = await fetch("/api/usuarios", {
         method: "POST",
-        headers: { "Content-Type": "application/json" }, // Boa prática adicionar o header
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            // Espalha os dados do formulário (nome, email, etc)
-            ...novoUser, 
-            
-            // 👇 O PULO DO GATO: Adiciona o vínculo com a empresa e o cargo
-            empresaId: empresaId, 
-            role: "FUNCIONARIO"
+          ...novoUser,
+          empresaId: empresaId,
+          role: "FUNCIONARIO",
         }),
       });
       const data = await res.json();
@@ -690,11 +686,9 @@ export default function AdminPage() {
       if (data.success) {
         setUsuarios([...usuarios, data.usuario]);
         setModalNovoUsuario(false);
-        setNovoUser({ nome: "", email: "", cargo: "" }); // Limpa o form
+        setNovoUser({ nome: "", email: "", cargo: "" });
         toast.success("Colaborador criado com sucesso!");
-        
-        // Recarrega para garantir
-        carregarDados(empresaId); 
+        carregarDados(empresaId);
       } else {
         toast.error(data.message);
       }
@@ -704,13 +698,11 @@ export default function AdminPage() {
     }
   }
 
-  // -- Abrir Edição de Usuário --
   function abrirEdicao(user) {
     setUsuarioParaEditar({ ...user });
     setModalEditarUsuario(true);
   }
 
-  // -- Salvar Edição de Usuário (Com atualização imediata) --
   async function handleSalvarEdicao() {
     try {
       const res = await fetch("/api/usuarios", {
@@ -720,12 +712,9 @@ export default function AdminPage() {
       const data = await res.json();
 
       if (data.success) {
-        setUsuarios((prevUsuarios) =>
-          prevUsuarios.map((u) =>
-            u.id === usuarioParaEditar.id ? data.usuario : u
-          )
+        setUsuarios((prev) =>
+          prev.map((u) => (u.id === usuarioParaEditar.id ? data.usuario : u))
         );
-
         toast.success("Dados do colaborador atualizados!");
         setModalEditarUsuario(false);
       } else {
@@ -736,7 +725,6 @@ export default function AdminPage() {
     }
   }
 
-  // -- Bloquear / Desbloquear Usuário --
   async function toggleStatusUsuario(user) {
     const novoStatus = user.status === "ativo" ? "inativo" : "ativo";
 
@@ -774,7 +762,6 @@ export default function AdminPage() {
     }
   }
 
-  // -- Excluir Usuário --
   async function handleExcluirUsuario(user) {
     if (confirm(`ATENÇÃO: Tem certeza que deseja EXCLUIR ${user.nome}?`)) {
       try {
@@ -785,7 +772,7 @@ export default function AdminPage() {
         if (res.ok) {
           toast.success("Usuário excluído com sucesso.");
           setUsuarios(usuarios.filter((u) => u.id !== user.id));
-          carregarDados();
+          carregarDados(empresaId);
         } else {
           toast.error("Erro ao excluir.");
         }
@@ -795,7 +782,6 @@ export default function AdminPage() {
     }
   }
 
-  // Helper para verificar status online
   function getStatusUsuario(userId) {
     const hojeStr = new Date().toLocaleDateString("pt-BR");
     const pontosHoje = pontosGerais
@@ -813,7 +799,6 @@ export default function AdminPage() {
       : "pausa";
   }
 
-  // ✅ CORREÇÃO DO ÍCONE DE MENSAGEM (ID number vs string)
   function getMensagemDia(dataIso) {
     const uid = usuarioSelecionado
       ? usuarioSelecionado.id
@@ -835,21 +820,23 @@ export default function AdminPage() {
       u.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
       (u.email && u.email.toLowerCase().includes(termoBusca.toLowerCase()))
   );
-// FUNÇÃO DE LOGOUT CORRIGIDA (Chama o servidor)
+
   async function handleLogout() {
     try {
-      // Pede ao servidor para destruir o cookie
       await fetch("/api/auth", { method: "DELETE" });
-      // Redireciona para o login
       window.location.href = "/";
     } catch (error) {
       console.error("Erro ao sair", error);
       window.location.href = "/";
     }
   }
+
+  // ==================================================================================
+  // 9. RENDER
+  // ==================================================================================
   return (
     <div className="min-h-screen bg-gray-50 font-sans flex text-gray-800">
-      {/* ======================= SIDEBAR (MENU LATERAL) ======================= */}
+      {/* ======================= SIDEBAR ======================= */}
       <aside className="w-64 bg-[#071d41] text-white flex flex-col fixed h-full z-10 shadow-xl print:hidden">
         <div className="p-6 border-b border-blue-900">
           <h1 className="text-2xl font-black tracking-tight">
@@ -858,6 +845,7 @@ export default function AdminPage() {
             <span className="text-blue-300">Admin</span>
           </h1>
         </div>
+
         <nav className="flex-1 p-4 space-y-2">
           <BotaoMenu
             icon={<LayoutDashboard size={20} />}
@@ -869,6 +857,7 @@ export default function AdminPage() {
               setRelatorioDetalhado(null);
             }}
           />
+
           <BotaoMenu
             icon={<FileText size={20} />}
             text="Relatórios"
@@ -890,10 +879,23 @@ export default function AdminPage() {
               setRelatorioDetalhado(null);
             }}
           />
+
+          {/* ✅ NOVO BOTÃO: ASSINATURA */}
+          <BotaoMenu
+            icon={<CreditCard size={20} />}
+            text="Minha Assinatura"
+            active={view === "assinatura"}
+            onClick={() => {
+              setView("assinatura");
+              setUsuarioSelecionado(null);
+              setRelatorioDetalhado(null);
+            }}
+          />
         </nav>
+
         <div className="p-4 border-t border-blue-900">
-       <button
-            onClick={handleLogout}  
+          <button
+            onClick={handleLogout}
             className="flex items-center gap-2 text-sm text-gray-300 hover:text-white w-full p-3 rounded hover:bg-white/10 transition"
           >
             <LogOut size={18} /> Sair do Sistema
@@ -901,9 +903,8 @@ export default function AdminPage() {
         </div>
       </aside>
 
-      {/* ======================= CONTEÚDO PRINCIPAL ======================= */}
+      {/* ======================= CONTEÚDO ======================= */}
       <main className="ml-64 flex-1 p-8 print:ml-0 print:p-0 print:w-full">
-        {/* HEADER SUPERIOR */}
         <header className="flex justify-between items-center mb-8 relative print:hidden">
           <div>
             <h2 className="text-2xl font-bold text-[#071d41]">
@@ -913,6 +914,8 @@ export default function AdminPage() {
                 ? "Relatórios Mensais"
                 : view === "consumos"
                 ? "Consumos"
+                : view === "assinatura"
+                ? "Minha Assinatura"
                 : "Painel de Controle"}
             </h2>
             <p className="text-gray-500 text-sm">
@@ -921,7 +924,7 @@ export default function AdminPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* ÍCONE DE NOTIFICAÇÃO (SINO) */}
+            {/* NOTIFICAÇÕES */}
             <div className="relative">
               <button
                 onClick={() => setMostrarNotificacoes(!mostrarNotificacoes)}
@@ -973,7 +976,7 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* PERFIL DO ADMIN */}
+            {/* PERFIL ADMIN */}
             <div className="flex items-center gap-3 pl-4 border-l">
               <div className="text-right hidden md:block">
                 <p className="text-sm font-bold text-[#071d41]">{adminUser.nome}</p>
@@ -1000,10 +1003,9 @@ export default function AdminPage() {
           </div>
         ) : (
           <>
-            {/* 1. DASHBOARD */}
+            {/* ===================== DASHBOARD ===================== */}
             {view === "dashboard" && !usuarioSelecionado && (
               <div className="space-y-6 animate-fade-in print:hidden">
-                {/* CARDS KPI */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <CardResumo
                     titulo="Colaboradores Ativos"
@@ -1025,7 +1027,6 @@ export default function AdminPage() {
                   />
                 </div>
 
-                {/* GRÁFICO DE PRODUTIVIDADE */}
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
                   <h3 className="font-bold text-[#071d41] mb-4 text-sm uppercase tracking-wide">
                     Produtividade da Equipe (Últimos 7 dias)
@@ -1033,44 +1034,16 @@ export default function AdminPage() {
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={dadosGrafico}>
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                          stroke="#e5e7eb"
-                        />
-                        <XAxis
-                          dataKey="name"
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: "#6b7280", fontSize: 12 }}
-                          dy={10}
-                        />
-                        <YAxis
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: "#6b7280", fontSize: 12 }}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "transparent" }}
-                          contentStyle={{
-                            borderRadius: "8px",
-                            border: "none",
-                            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                          }}
-                        />
-                        <Bar
-                          dataKey="horas"
-                          fill="#3b82f6"
-                          radius={[4, 4, 0, 0]}
-                          barSize={40}
-                          name="Horas Trabalhadas"
-                        />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} />
+                        <Tooltip cursor={{ fill: "transparent" }} />
+                        <Bar dataKey="horas" radius={[4, 4, 0, 0]} barSize={40} name="Horas Trabalhadas" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                {/* TABELA DE USUÁRIOS */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                   <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center bg-gray-50 gap-4">
                     <h3 className="font-bold text-[#071d41] text-lg">
@@ -1182,7 +1155,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* 2. RELATÓRIOS */}
+            {/* ===================== RELATÓRIOS ===================== */}
             {view === "relatorios" && !usuarioSelecionado && !relatorioDetalhado && (
               <div className="space-y-6 animate-fade-in">
                 <div className="hidden print:block text-center mb-6">
@@ -1191,18 +1164,8 @@ export default function AdminPage() {
                     Período:{" "}
                     {
                       [
-                        "Janeiro",
-                        "Fevereiro",
-                        "Março",
-                        "Abril",
-                        "Maio",
-                        "Junho",
-                        "Julho",
-                        "Agosto",
-                        "Setembro",
-                        "Outubro",
-                        "Novembro",
-                        "Dezembro",
+                        "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                        "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
                       ][mesRelatorio]
                     }{" "}
                     / {anoRelatorio}
@@ -1213,6 +1176,7 @@ export default function AdminPage() {
                   <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg print:hidden">
                     <FileText size={24} className="text-[#1351b4]" /> Relatório Mensal de Ponto
                   </h3>
+
                   <div className="flex gap-2 print:hidden">
                     <select
                       value={mesRelatorio}
@@ -1220,33 +1184,20 @@ export default function AdminPage() {
                       className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer"
                     >
                       {[
-                        "Janeiro",
-                        "Fevereiro",
-                        "Março",
-                        "Abril",
-                        "Maio",
-                        "Junho",
-                        "Julho",
-                        "Agosto",
-                        "Setembro",
-                        "Outubro",
-                        "Novembro",
-                        "Dezembro",
+                        "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                        "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
                       ].map((m, i) => (
-                        <option key={i} value={i}>
-                          {m}
-                        </option>
+                        <option key={i} value={i}>{m}</option>
                       ))}
                     </select>
+
                     <select
                       value={anoRelatorio}
                       onChange={(e) => setAnoRelatorio(Number(e.target.value))}
                       className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer"
                     >
                       {Array.from({ length: 5 }, (_, i) => 2026 + i).map((a) => (
-                        <option key={a} value={a}>
-                          {a}
-                        </option>
+                        <option key={a} value={a}>{a}</option>
                       ))}
                     </select>
 
@@ -1359,7 +1310,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* 3. CONSUMOS */}
+            {/* ===================== CONSUMOS ===================== */}
             {view === "consumos" && !usuarioSelecionado && !relatorioDetalhado && (
               <div className="space-y-6 animate-fade-in print:hidden">
                 <div className="bg-white p-6 rounded shadow-sm border border-gray-200">
@@ -1382,7 +1333,8 @@ export default function AdminPage() {
                       </select>
                       <button
                         onClick={() => {
-                          if (!colaboradorConsumo) return toast.warning("Selecione um funcionário!");
+                          if (!colaboradorConsumo)
+                            return toast.warning("Selecione um funcionário!");
                           setConsumoEditando(null);
                           setNovoConsumo({ nomeItem: "", valor: "", imagemUrl: "" });
                           setModalNovoConsumo(true);
@@ -1398,7 +1350,9 @@ export default function AdminPage() {
                     <>
                       <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center mb-6">
                         <div>
-                          <p className="text-xs font-bold text-blue-500 uppercase">Total a Pagar</p>
+                          <p className="text-xs font-bold text-blue-500 uppercase">
+                            Total a Pagar
+                          </p>
                           <p className="text-2xl font-black text-[#071d41]">
                             {new Intl.NumberFormat("pt-BR", {
                               style: "currency",
@@ -1413,7 +1367,9 @@ export default function AdminPage() {
 
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {listaConsumos
-                          .filter((c) => Number(c.usuarioId) === Number(colaboradorConsumo))
+                          .filter(
+                            (c) => Number(c.usuarioId) === Number(colaboradorConsumo)
+                          )
                           .map((item) => (
                             <div
                               key={item.id}
@@ -1431,7 +1387,9 @@ export default function AdminPage() {
                                 )}
                               </div>
                               <div className="flex-1">
-                                <h4 className="font-bold text-gray-800">{item.nomeItem}</h4>
+                                <h4 className="font-bold text-gray-800">
+                                  {item.nomeItem}
+                                </h4>
                                 <p className="text-sm text-green-600 font-bold">
                                   R$ {Number(item.valor || 0).toFixed(2).replace(".", ",")}
                                 </p>
@@ -1466,34 +1424,182 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* 3. FOLHA DE PONTO DETALHADA */}
+            {/* ===================== ASSINATURA (NOVO) ===================== */}
+            {view === "assinatura" && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                    <CreditCard className="text-[#1351b4]" /> Gestão da Assinatura
+                  </h2>
+
+                  <button
+                    onClick={() => atualizarEmpresa(empresaId)}
+                    className="text-sm font-bold px-4 py-2 rounded border bg-white hover:bg-gray-50"
+                  >
+                    Atualizar Status
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                    <h3 className="text-sm font-bold text-gray-500 uppercase mb-4">
+                      Status da Conta
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`p-2 rounded-full ${
+                          empresa?.ativo
+                            ? "bg-green-100 text-green-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {empresa?.ativo ? (
+                          <CheckCircle size={24} />
+                        ) : (
+                          <AlertTriangle size={24} />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold">
+                          {empresa?.ativo ? "Ativa" : "Bloqueada"}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {empresa?.ativo
+                            ? "Acesso total liberado"
+                            : "Pagamento pendente"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                    <h3 className="text-sm font-bold text-gray-500 uppercase mb-4">
+                      Próximo Vencimento
+                    </h3>
+                    <p className="text-3xl font-bold text-[#1351b4]">
+                      {empresa?.pagoAte
+                        ? new Date(empresa.pagoAte).toLocaleDateString("pt-BR")
+                        : "--/--/----"}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Mantenha em dia para evitar bloqueios.
+                    </p>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                    <h3 className="text-sm font-bold text-gray-500 uppercase mb-4">
+                      Plano Atual
+                    </h3>
+                    <p className="text-2xl font-bold text-gray-800 capitalize">
+                      {empresa?.plano || "Mensal"}
+                    </p>
+                    <p className="text-sm text-gray-500">R$ 160,00 / mês</p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
+                  <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-4">
+                    Renovar Agora
+                  </h3>
+
+                  <div className="flex flex-col md:flex-row gap-8 items-start">
+                    <div className="flex-1 w-full">
+                      <p className="text-gray-600 mb-6 text-sm">
+                        Selecione o período para renovação via Pix (Liberação
+                        Imediata):
+                      </p>
+
+                      <div className="flex gap-4 mb-6">
+                        <button
+                          onClick={() => gerarPagamento("MENSAL")}
+                          disabled={loadingPix}
+                          className="flex-1 border-2 border-[#1351b4] bg-blue-50 text-[#1351b4] py-4 rounded-lg font-bold hover:bg-[#1351b4] hover:text-white transition disabled:opacity-60"
+                        >
+                          Mensal{" "}
+                          <span className="block text-xs font-normal">
+                            R$ 160,00
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() => gerarPagamento("ANUAL")}
+                          disabled={loadingPix}
+                          className="flex-1 border border-gray-200 text-gray-600 py-4 rounded-lg font-bold hover:border-green-500 hover:text-green-600 transition disabled:opacity-60"
+                        >
+                          Anual{" "}
+                          <span className="block text-xs font-normal">
+                            R$ 1.600,00
+                          </span>
+                        </button>
+                      </div>
+
+                      {loadingPix && (
+                        <div className="text-center text-blue-600 flex justify-center gap-2">
+                          <Loader2 className="animate-spin" /> Gerando Pix...
+                        </div>
+                      )}
+                    </div>
+
+                    {pixData && (
+                      <div className="flex-1 bg-gray-50 p-4 rounded-lg border border-gray-200 text-center w-full animate-scale-in">
+                        <p className="text-sm font-bold text-green-700 mb-2 flex justify-center gap-1">
+                          <CheckCircle size={16} /> Pix Gerado!
+                        </p>
+
+                        <img
+                          src={`data:image/png;base64,${pixData.qrCodeImage}`}
+                          alt="QR Pix"
+                          className="w-40 h-40 mx-auto border-4 border-white shadow-sm mb-4"
+                        />
+
+                        <div className="relative">
+                          <input
+                            readOnly
+                            value={pixData.pixCopiaCola}
+                            className="w-full text-[10px] font-mono bg-white border p-2 pr-8 rounded text-gray-500"
+                          />
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(pixData.pixCopiaCola);
+                              toast.success("Copiado!");
+                            }}
+                            className="absolute right-1 top-1 p-1 hover:text-blue-600 text-gray-400"
+                            title="Copiar"
+                          >
+                            <Copy size={14} />
+                          </button>
+                        </div>
+
+                        <p className="text-[11px] text-gray-400 mt-3">
+                          Depois do pagamento, clique em{" "}
+                          <b>Atualizar Status</b>.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ===================== FOLHA DETALHADA ===================== */}
             {relatorioDetalhado && (
               <div className="bg-white p-8 max-w-4xl mx-auto shadow-lg print:shadow-none print:w-full animate-fade-in">
-                {/* Header da Folha */}
                 <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-6">
                   <div>
                     <h1 className="text-2xl font-black text-gray-900 uppercase tracking-wide">
                       Pinguim Manoa
                     </h1>
-                    <p className="text-sm text-gray-500 font-bold">Folha de Ponto Individual</p>
+                    <p className="text-sm text-gray-500 font-bold">
+                      Folha de Ponto Individual
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-bold text-gray-900">
                       Período:{" "}
                       {
                         [
-                          "Janeiro",
-                          "Fevereiro",
-                          "Março",
-                          "Abril",
-                          "Maio",
-                          "Junho",
-                          "Julho",
-                          "Agosto",
-                          "Setembro",
-                          "Outubro",
-                          "Novembro",
-                          "Dezembro",
+                          "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                          "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
                         ][mesRelatorio]
                       }{" "}
                       / {anoRelatorio}
@@ -1504,7 +1610,6 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Dados do Colaborador */}
                 <div className="mb-6 bg-gray-50 p-4 rounded border border-gray-200 print:bg-transparent print:border-gray-300">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
@@ -1521,7 +1626,9 @@ export default function AdminPage() {
                     </div>
                     <div>
                       <span className="font-bold text-gray-600">Email:</span>{" "}
-                      <span className="text-gray-900 ml-2">{relatorioDetalhado.email}</span>
+                      <span className="text-gray-900 ml-2">
+                        {relatorioDetalhado.email}
+                      </span>
                     </div>
                     <div>
                       <span className="font-bold text-gray-600">Saldo do Mês:</span>{" "}
@@ -1538,7 +1645,6 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Tabela de Dias */}
                 <table className="w-full text-xs md:text-sm border-collapse border border-gray-300 mb-8">
                   <thead className="bg-gray-100 print:bg-gray-200 text-gray-800 font-bold uppercase">
                     <tr>
@@ -1564,13 +1670,7 @@ export default function AdminPage() {
                         <td className="border border-black p-1 text-center font-mono">
                           {dia.horasTrabalhadas}
                         </td>
-                        <td
-                          className={`border border-black p-1 text-center font-bold ${
-                            dia.saldo === "00:00" || dia.saldoPositivo
-                              ? "text-green-700"
-                              : "text-red-600"
-                          }`}
-                        >
+                        <td className="border border-black p-1 text-center font-bold">
                           {dia.saldo}
                         </td>
                         <td className="border border-black p-1 text-center">{dia.status}</td>
@@ -1579,21 +1679,6 @@ export default function AdminPage() {
                   </tbody>
                 </table>
 
-                {/* Assinaturas */}
-                <div className="mt-16 grid grid-cols-2 gap-20 print:gap-10 page-break-inside-avoid">
-                  <div className="text-center">
-                    <div className="border-t border-black pt-2"></div>
-                    <p className="text-sm font-bold uppercase">Pinguim Manoa</p>
-                    <p className="text-xs text-gray-500">Empregador</p>
-                  </div>
-                  <div className="text-center">
-                    <div className="border-t border-black pt-2"></div>
-                    <p className="text-sm font-bold uppercase">{relatorioDetalhado.nome}</p>
-                    <p className="text-xs text-gray-500">Colaborador</p>
-                  </div>
-                </div>
-
-                {/* Botões de Controle */}
                 <div className="mt-8 flex flex-col md:flex-row justify-center gap-4 print:hidden">
                   <button
                     onClick={() => setRelatorioDetalhado(null)}
@@ -1619,7 +1704,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* 4. EDIÇÃO HISTÓRICO (DASHBOARD) */}
+            {/* ===================== HISTÓRICO DO USUÁRIO ===================== */}
             {usuarioSelecionado && (
               <div className="animate-fade-in space-y-6 print:hidden">
                 <div className="flex justify-between items-center">
@@ -1629,6 +1714,7 @@ export default function AdminPage() {
                   >
                     <ChevronDown size={16} className="rotate-90" /> Voltar para Lista
                   </button>
+
                   <div className="flex gap-2">
                     <button
                       onClick={() => toggleStatusUsuario(usuarioSelecionado)}
@@ -1651,7 +1737,6 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Card Info Usuário */}
                 <div className="bg-white p-6 rounded shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-2xl font-bold">
@@ -1680,22 +1765,10 @@ export default function AdminPage() {
                         className="border p-1 rounded text-xs outline-none bg-white"
                       >
                         {[
-                          "Janeiro",
-                          "Fevereiro",
-                          "Março",
-                          "Abril",
-                          "Maio",
-                          "Junho",
-                          "Julho",
-                          "Agosto",
-                          "Setembro",
-                          "Outubro",
-                          "Novembro",
-                          "Dezembro",
+                          "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                          "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
                         ].map((m, i) => (
-                          <option key={i} value={i}>
-                            {m}
-                          </option>
+                          <option key={i} value={i}>{m}</option>
                         ))}
                       </select>
                       <select
@@ -1704,9 +1777,7 @@ export default function AdminPage() {
                         className="border p-1 rounded text-xs outline-none bg-white"
                       >
                         {Array.from({ length: 5 }, (_, i) => 2026 + i).map((a) => (
-                          <option key={a} value={a}>
-                            {a}
-                          </option>
+                          <option key={a} value={a}>{a}</option>
                         ))}
                       </select>
                     </div>
@@ -1716,7 +1787,6 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Acordeão de Histórico */}
                 <div className="bg-white rounded shadow-sm border border-gray-200">
                   <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
                     <span className="font-bold text-[#071d41] flex items-center gap-2">
@@ -1742,7 +1812,7 @@ export default function AdminPage() {
                             new Date(p.data).toLocaleDateString("pt-BR") ===
                               dia.dataFormatada
                         )}
-                        mensagem={getMensagemDia(dia.dataIso)} // ✅ CRUCIAL
+                        mensagem={getMensagemDia(dia.dataIso)}
                         usuarioId={usuarioSelecionado.id}
                         isFolga={folgasGerais.some(
                           (f) =>
@@ -1760,7 +1830,7 @@ export default function AdminPage() {
         )}
       </main>
 
-      {/* MODAL PERFIL ADMIN */}
+      {/* ===================== MODAIS ===================== */}
       {modalPerfilAdmin && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in border-t-4 border-blue-500">
@@ -1775,6 +1845,7 @@ export default function AdminPage() {
                 <X />
               </button>
             </div>
+
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">
@@ -1782,36 +1853,39 @@ export default function AdminPage() {
                 </label>
                 <input
                   className="w-full border p-2.5 rounded outline-none focus:border-blue-500"
-                  value={adminParaEditar.nome}
+                  value={adminParaEditar.nome || ""}
                   onChange={(e) =>
                     setAdminParaEditar({ ...adminParaEditar, nome: e.target.value })
                   }
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">
                   E-mail para Relatórios
                 </label>
                 <input
                   className="w-full border p-2.5 rounded outline-none focus:border-blue-500"
-                  value={adminParaEditar.email}
+                  value={adminParaEditar.email || ""}
                   onChange={(e) =>
                     setAdminParaEditar({ ...adminParaEditar, email: e.target.value })
                   }
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">
                   Cargo / Função
                 </label>
                 <input
                   className="w-full border p-2.5 rounded outline-none focus:border-blue-500"
-                  value={adminParaEditar.cargo}
+                  value={adminParaEditar.cargo || ""}
                   onChange={(e) =>
                     setAdminParaEditar({ ...adminParaEditar, cargo: e.target.value })
                   }
                 />
               </div>
+
               <button
                 onClick={salvarPerfilAdmin}
                 className="w-full bg-blue-600 text-white font-bold py-3 rounded mt-2 hover:bg-blue-700 shadow-md transition"
@@ -1823,7 +1897,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL NOVO USUÁRIO */}
       {modalNovoUsuario && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm animate-scale-in">
@@ -1838,6 +1911,7 @@ export default function AdminPage() {
                 <X />
               </button>
             </div>
+
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">
@@ -1845,35 +1919,33 @@ export default function AdminPage() {
                 </label>
                 <input
                   placeholder="Ex: João Silva"
-                  className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full border p-2.5 rounded outline-none"
                   value={novoUser.nome}
                   onChange={(e) => setNovoUser({ ...novoUser, nome: e.target.value })}
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">
                   E-mail (Login)
                 </label>
                 <input
                   placeholder="email@exemplo.com"
-                  className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full border p-2.5 rounded outline-none"
                   value={novoUser.email}
-                  onChange={(e) =>
-                    setNovoUser({ ...novoUser, email: e.target.value })
-                  }
+                  onChange={(e) => setNovoUser({ ...novoUser, email: e.target.value })}
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">
                   Cargo
                 </label>
                 <input
                   placeholder="Ex: Vendedor"
-                  className="w-full border p-2.5 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full border p-2.5 rounded outline-none"
                   value={novoUser.cargo}
-                  onChange={(e) =>
-                    setNovoUser({ ...novoUser, cargo: e.target.value })
-                  }
+                  onChange={(e) => setNovoUser({ ...novoUser, cargo: e.target.value })}
                 />
               </div>
 
@@ -1881,7 +1953,7 @@ export default function AdminPage() {
                 <AlertCircle size={14} className="mt-0.5 min-w-[14px]" />
                 <p>
                   O usuário será criado com a senha padrão <strong>123</strong>{" "}
-                  (ou pinguim) e deverá trocá-la no primeiro acesso.
+                  e deverá trocar no primeiro acesso.
                 </p>
               </div>
 
@@ -1896,7 +1968,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL EDITAR USUÁRIO */}
       {modalEditarUsuario && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm border-t-4 border-orange-500">
@@ -1911,38 +1982,41 @@ export default function AdminPage() {
                 <X />
               </button>
             </div>
+
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">
                   Nome Completo
                 </label>
                 <input
-                  className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none"
-                  value={usuarioParaEditar.nome}
+                  className="w-full border p-2.5 rounded outline-none"
+                  value={usuarioParaEditar.nome || ""}
                   onChange={(e) =>
                     setUsuarioParaEditar({ ...usuarioParaEditar, nome: e.target.value })
                   }
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">
                   E-mail
                 </label>
                 <input
-                  className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none"
-                  value={usuarioParaEditar.email}
+                  className="w-full border p-2.5 rounded outline-none"
+                  value={usuarioParaEditar.email || ""}
                   onChange={(e) =>
                     setUsuarioParaEditar({ ...usuarioParaEditar, email: e.target.value })
                   }
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">
                   Cargo
                 </label>
                 <input
-                  className="w-full border p-2.5 rounded focus:ring-2 focus:ring-orange-200 outline-none"
-                  value={usuarioParaEditar.cargo}
+                  className="w-full border p-2.5 rounded outline-none"
+                  value={usuarioParaEditar.cargo || ""}
                   onChange={(e) =>
                     setUsuarioParaEditar({ ...usuarioParaEditar, cargo: e.target.value })
                   }
@@ -1960,13 +2034,13 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* MODAL NOVO CONSUMO */}
       {modalNovoConsumo && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
           <div className="bg-white p-6 rounded shadow w-full max-w-sm animate-scale-in">
             <h3 className="font-bold text-lg mb-4">
               {consumoEditando ? "Editar Item" : "Novo Item"}
             </h3>
+
             <div className="space-y-4">
               <input
                 placeholder="Nome do Item"
@@ -1976,6 +2050,7 @@ export default function AdminPage() {
                   setNovoConsumo({ ...novoConsumo, nomeItem: e.target.value })
                 }
               />
+
               <div className="relative">
                 <DollarSign size={16} className="absolute left-2 top-3 text-gray-400" />
                 <input
@@ -1989,6 +2064,7 @@ export default function AdminPage() {
                   }
                 />
               </div>
+
               <input
                 placeholder="URL da Imagem (Opcional)"
                 className="w-full border p-2 rounded"
@@ -1997,12 +2073,14 @@ export default function AdminPage() {
                   setNovoConsumo({ ...novoConsumo, imagemUrl: e.target.value })
                 }
               />
+
               <button
                 onClick={handleSalvarConsumo}
                 className="w-full bg-[#1351b4] text-white py-2 rounded"
               >
                 Salvar
               </button>
+
               <button
                 onClick={() => setModalNovoConsumo(false)}
                 className="w-full text-gray-500 py-2"
@@ -2020,7 +2098,6 @@ export default function AdminPage() {
 // ==========================================================
 // FUNÇÕES AUXILIARES E COMPONENTES
 // ==========================================================
-
 function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
   const dias = [];
   const ultimoDia = new Date(ano, mes + 1, 0).getDate();
@@ -2069,10 +2146,7 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
         const diff = dtSaida - dtEntrada;
         const hTrab = Math.floor(diff / 3600000);
         const mTrab = Math.floor((diff % 3600000) / 60000);
-        horasTrabalhadas = `${String(hTrab).padStart(2, "0")}:${String(mTrab).padStart(
-          2,
-          "0"
-        )}`;
+        horasTrabalhadas = `${String(hTrab).padStart(2, "0")}:${String(mTrab).padStart(2, "0")}`;
 
         const meta = 8 * 3600000;
         const saldoMs = diff - meta;
@@ -2084,13 +2158,9 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
           saldoPositivo = saldoMs >= 0;
           const hSaldo = Math.floor(Math.abs(saldoMs) / 3600000);
           const mSaldo = Math.floor((Math.abs(saldoMs) % 3600000) / 60000);
-          saldo = `${saldoPositivo ? "+" : "-"}${String(hSaldo).padStart(
-            2,
-            "0"
-          )}:${String(mSaldo).padStart(2, "0")}`;
+          saldo = `${saldoPositivo ? "+" : "-"}${String(hSaldo).padStart(2, "0")}:${String(mSaldo).padStart(2, "0")}`;
         }
       } else {
-        // Se é HOJE e ainda não saiu, não penaliza como ausência
         if (dataSemHora.getTime() === hojeSemHora.getTime()) {
           saldo = "";
           status = "EM ANDAMENTO";
@@ -2107,7 +2177,7 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
         status = "AUSÊNCIA";
       } else {
         saldo = "";
-        status = ""; // Dia futuro
+        status = "";
       }
     }
 
@@ -2127,7 +2197,6 @@ function gerarDiasDoMesParaRelatorio(mes, ano, pontos, folgas) {
   return dias;
 }
 
-// ✅ CORREÇÃO: ItemDiaAdmin agora calcula status/saldo usando pontosReais (não dia.pontos)
 function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate }) {
   const [aberto, setAberto] = useState(false);
 
@@ -2156,9 +2225,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         let dtEntrada = new Date(primeiraEntrada.data);
         let dtSaida = new Date(ultimaSaida.data);
 
-        if (dtSaida < dtEntrada) {
-          dtSaida.setDate(dtSaida.getDate() + 1);
-        }
+        if (dtSaida < dtEntrada) dtSaida.setDate(dtSaida.getDate() + 1);
 
         const diff = dtSaida - dtEntrada;
         const meta = 8 * 60 * 60 * 1000;
@@ -2171,10 +2238,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
           saldoPositivo = saldoMs >= 0;
           const h = Math.floor(Math.abs(saldoMs) / 3600000);
           const m = Math.floor((Math.abs(saldoMs) % 3600000) / 60000);
-          saldoStr = `${saldoPositivo ? "+" : "-"}${String(h).padStart(
-            2,
-            "0"
-          )}:${String(m).padStart(2, "0")}`;
+          saldoStr = `${saldoPositivo ? "+" : "-"}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
         }
       } else {
         saldoStr = "-08:00";
@@ -2245,7 +2309,7 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
         method: "POST",
         body: JSON.stringify({
           modoAdmin: true,
-          usuarioId: usuarioId,
+          usuarioId,
           tipo: novoPonto.tipo,
           dataManual: dataFinal.toISOString(),
         }),
@@ -2375,12 +2439,14 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                 <option>Volta Intervalo</option>
                 <option>Saída</option>
               </select>
+
               <input
                 type="time"
                 value={novoPonto.hora}
                 onChange={(e) => setNovoPonto({ ...novoPonto, hora: e.target.value })}
                 className="border rounded p-1 text-sm outline-none focus:border-green-500"
               />
+
               <div className="flex gap-1 ml-auto">
                 <button
                   onClick={salvarNovoPonto}
@@ -2421,12 +2487,14 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                         <option>Volta Intervalo</option>
                         <option>Saída</option>
                       </select>
+
                       <input
                         type="time"
                         value={editValues.hora}
                         onChange={(e) => setEditValues({ ...editValues, hora: e.target.value })}
                         className="border rounded p-1 text-xs"
                       />
+
                       <div className="flex gap-1 ml-auto">
                         <button
                           onClick={() => salvarEdicao(p.id, p.data)}
@@ -2454,26 +2522,20 @@ function ItemDiaAdmin({ dia, pontosReais, mensagem, usuarioId, isFolga, onUpdate
                               : "bg-blue-500"
                           }`}
                         ></div>
-                        <span
-                          className={`font-bold w-24 ${
-                            p.tipo === "Entrada"
-                              ? "text-green-700"
-                              : p.tipo === "Saída"
-                              ? "text-red-700"
-                              : "text-blue-700"
-                          }`}
-                        >
-                          {p.tipo}
-                        </span>
+
+                        <span className="font-bold w-24">{p.tipo}</span>
+
                         <span className="font-mono text-gray-700 font-bold text-base">
                           {new Date(p.data).toLocaleTimeString("pt-BR").slice(0, 5)}
                         </span>
+
                         {p.ip && p.ip.includes("Manual") && (
                           <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1.5 rounded border border-yellow-200 font-bold hidden md:inline-block">
                             MANUAL
                           </span>
                         )}
                       </div>
+
                       <div className="flex gap-2 opacity-50 hover:opacity-100 transition">
                         <button
                           onClick={() => iniciarEdicao(p)}
@@ -2566,7 +2628,7 @@ function formatarSaldo(minutos) {
   return minutos >= 0 ? `+${str}` : `-${str}`;
 }
 
-function gerarDiasDoMesSelecionado(mes, ano, pontos) {
+function gerarDiasDoMesSelecionado(mes, ano) {
   const dias = [];
   const ultimoDia = new Date(ano, mes + 1, 0).getDate();
 
@@ -2579,7 +2641,7 @@ function gerarDiasDoMesSelecionado(mes, ano, pontos) {
       dataIso,
       dataFormatada: dataStr,
       diaSemana: d.toLocaleDateString("pt-BR", { weekday: "long" }),
-      pontos: [], // Mantido, mas o cálculo agora usa pontosReais
+      pontos: [],
     });
   }
 

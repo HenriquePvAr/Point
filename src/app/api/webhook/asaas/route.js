@@ -1,47 +1,84 @@
-import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma"; // <--- 1. SEM AS CHAVES { }
 
 export async function POST(req) {
-  // Segurança básica: Verificar token do Asaas no header se configurado
-  const body = await req.json();
+  try {
+    const body = await req.json();
 
-  if (body.event === "PAYMENT_RECEIVED" || body.event === "PAYMENT_CONFIRMED") {
-    const asaasId = body.payment.id;
-    const valor = body.payment.value;
-    
-    // 1. Achar o pagamento pendente no seu banco pelo ID do Asaas
-    // (Você teria criado esse registro quando gerou o Pix/Boleto)
-    const pagamento = await prisma.pagamento.findFirst({
-        where: { asaasId: asaasId }
-    });
+    // Log para depuração (opcional, ajuda a ver o que chega)
+    console.log("Webhook Asaas Recebido:", body.event);
 
-    if (pagamento) {
-        // 2. Atualizar status do pagamento
-        await prisma.pagamento.update({
-            where: { id: pagamento.id },
-            data: { status: 'PAID', dataPagamento: new Date() }
-        });
+    if (body.event === "PAYMENT_RECEIVED" || body.event === "PAYMENT_CONFIRMED") {
+      const asaasPaymentId = body.payment.id;
+      const asaasCustomerId = body.payment.customer;
+      const valor = body.payment.value;
+      const dataPagamento = new Date(); // Data de hoje
 
-        // 3. Renovar a assinatura da empresa
-        const diasAdicionais = pagamento.valor > 1000 ? 365 : 30; // Lógica simples baseada no plano
-        const empresa = await prisma.empresa.findUnique({ where: { id: pagamento.empresaId }});
-        
-        let novaData = new Date();
-        if (empresa.pagoAte && empresa.pagoAte > new Date()) {
-            novaData = new Date(empresa.pagoAte); // Soma à data existente se ainda não venceu
-        }
-        
-        novaData.setDate(novaData.getDate() + diasAdicionais);
+      // 1. Tenta achar a EMPRESA pelo ID do Cliente Asaas
+      // (Isso garante que funcione mesmo em renovações automáticas mensais)
+      const empresa = await prisma.empresa.findFirst({
+        where: { asaasCustomerId: asaasCustomerId }
+      });
 
-        await prisma.empresa.update({
-            where: { id: pagamento.empresaId },
-            data: { 
-                ativo: true,
-                pagoAte: novaData
+      if (!empresa) {
+        console.error("❌ Empresa não encontrada para o cliente Asaas:", asaasCustomerId);
+        return NextResponse.json({ received: true }); // Retorna 200 pro Asaas não ficar tentando de novo
+      }
+
+      console.log(`✅ Pagamento identificado para empresa: ${empresa.nome}`);
+
+      // 2. Atualiza ou Cria o Registro do Pagamento no histórico
+      // (Se já existir pelo ID do Asaas, atualiza. Se não, cria um novo.)
+      const pagamentoExistente = await prisma.pagamento.findFirst({
+         where: { asaasId: asaasPaymentId }
+      });
+
+      if (pagamentoExistente) {
+         await prisma.pagamento.update({
+            where: { id: pagamentoExistente.id },
+            data: { status: 'PAID', dataPagamento: dataPagamento }
+         });
+      } else {
+         // Pagamento novo (ex: renovação automática)
+         await prisma.pagamento.create({
+            data: {
+               empresaId: empresa.id,
+               valor: valor,
+               metodo: body.payment.billingType || 'UNDEFINED',
+               status: 'PAID',
+               asaasId: asaasPaymentId,
+               dataPagamento: dataPagamento
             }
-        });
-    }
-  }
+         });
+      }
 
-  return NextResponse.json({ received: true });
+      // 3. Lógica de Renovação da Assinatura
+      const diasAdicionais = valor > 1000 ? 365 : 30; // Ajuste conforme seu preço real
+      
+      let novaDataValidade = new Date();
+      
+      // Se a empresa ainda tem dias sobrando, soma a partir do vencimento atual
+      if (empresa.pagoAte && empresa.pagoAte > new Date()) {
+          novaDataValidade = new Date(empresa.pagoAte);
+      }
+      
+      novaDataValidade.setDate(novaDataValidade.getDate() + diasAdicionais);
+
+      await prisma.empresa.update({
+          where: { id: empresa.id },
+          data: { 
+              ativo: true,
+              pagoAte: novaDataValidade
+          }
+      });
+
+      console.log(`🎉 Assinatura renovada até: ${novaDataValidade.toLocaleDateString()}`);
+    }
+
+    return NextResponse.json({ received: true });
+
+  } catch (error) {
+    console.error("Erro no Webhook:", error);
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
+  }
 }
