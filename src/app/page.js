@@ -67,6 +67,7 @@ export default function Page() {
 
   // Mensagens / Justificativas
   const [mensagens, setMensagens] = useState({});
+  const [meusConsumos, setMeusConsumos] = useState([]); // Adicionado para evitar erro
 
   // Controles de Ponto
   const [tipoSelecionado, setTipoSelecionado] = useState(null);
@@ -105,6 +106,8 @@ export default function Page() {
       nome: c?.nome || "Usuário",
       email: c?.email || "",
       tipo: c?.tipo || "user",
+      role: c?.role || "FUNCIONARIO",
+      empresaId: c?.empresaId, 
       lastUsed: c?.lastUsed || 0,
     };
   }
@@ -114,6 +117,8 @@ export default function Page() {
       nome: userObj.nome,
       email: userObj.email,
       tipo: userObj.tipo || "user",
+      role: userObj.role || "FUNCIONARIO",
+      empresaId: userObj.empresaId,
       lastUsed: Date.now(),
     };
     const base = (listaAtual || []).map(normalizarConta).filter(c => c.email && c.email !== nova.email);
@@ -132,7 +137,48 @@ export default function Page() {
     setContasSalvas(novaLista);
     localStorage.setItem("point_users", JSON.stringify(novaLista));
   }
-// ==========================================================
+
+  // ==========================================================
+  // 2.2 FUNÇÃO DE CARREGAMENTO DE DADOS (DENTRO DO COMPONENTE)
+  // ==========================================================
+  async function carregarDadosUsuario(userId, empresaId) {
+    try {
+      // 1. Busca mensagens (Mural) - AGORA COM FILTRO DE EMPRESA
+      const urlMsg = empresaId ? `/api/mensagens?empresaId=${empresaId}` : null;
+      
+      let dataMsg = [];
+      if (urlMsg) {
+          const resMsg = await fetch(urlMsg);
+          dataMsg = await resMsg.json();
+      }
+      
+      const msgObj = {};
+      if (Array.isArray(dataMsg)) {
+        dataMsg.forEach(m => {
+          msgObj[m.dataIso] = m.texto;
+        });
+      }
+      setMensagens(msgObj);
+
+      // 2. Busca histórico de pontos (Continua igual, apenas pelo userId)
+      const resPonto = await fetch(`/api/ponto?userId=${userId}`);
+      const dataPonto = await resPonto.json();
+      setHistorico(Array.isArray(dataPonto) ? dataPonto : []);
+
+      // 3. Busca consumos (Cantina) - AGORA COM FILTRO DE EMPRESA
+      if (empresaId) {
+          const resConsumo = await fetch(`/api/consumos?userId=${userId}&empresaId=${empresaId}`);
+          const dataConsumo = await resConsumo.json();
+          setMeusConsumos(Array.isArray(dataConsumo) ? dataConsumo : []);
+      }
+
+    } catch (error) {
+      console.error("Erro ao buscar dados do usuário", error);
+      toast.error("Erro ao sincronizar dados.");
+    }
+  }
+
+  // ==========================================================
   // 3. EFEITO: CARREGA TEMA, CONTAS SALVAS E VERIFICA SESSÃO
   // ==========================================================
   useEffect(() => {
@@ -159,10 +205,10 @@ export default function Page() {
           // Sempre atualiza a lista do PC
           const listaAtualizada = salvarContaNoDispositivo(data.user, salvos);
           
-          // Salva dados atualizados na sessão atual também
+          // Salva sessão atual
           localStorage.setItem("point_user", JSON.stringify(data.user));
 
-          // --- AJUSTE 1: VERIFICAÇÃO DE ADMIN (Novo padrão 'role') ---
+          // Verifica se é Admin
           if (data.user.role === "ADMIN" || data.user.role === "SUPER_ADMIN" || data.user.tipo === "admin") {
             atualizarUltimoUso(data.user.email, listaAtualizada);
             router.push("/admin");
@@ -170,37 +216,24 @@ export default function Page() {
           }
 
           setUser(data.user);
-          // Função atualizada para receber também o ID da Empresa
-  async function carregarDadosUsuario(userId, empresaId) {
-    try {
-      // 1. Busca mensagens (Mural) - AGORA COM FILTRO DE EMPRESA
-      // Se não tiver empresaId (ex: admin master), busca sem filtro ou retorna vazio
-      const urlMsg = empresaId ? `/api/mensagens?empresaId=${empresaId}` : null;
-      
-      let dataMsg = [];
-      if (urlMsg) {
-          const resMsg = await fetch(urlMsg);
-          dataMsg = await resMsg.json();
+          // Carrega dados usando a função definida acima
+          carregarDadosUsuario(data.user.id, data.user.empresaId);
+          
+          atualizarUltimoUso(data.user.email, listaAtualizada);
+          toast.success(`Bem-vindo de volta, ${data.user.nome.split(" ")[0]}!`);
+        } else {
+          if (salvos.length > 0) setModoSelecaoConta(true);
+        }
+      } catch (e) {
+        if (salvos.length > 0) setModoSelecaoConta(true);
+      } finally {
+        setVerificandoSessao(false);
       }
-      setMensagens(Array.isArray(dataMsg) ? dataMsg : []);
-
-      // 2. Busca histórico de pontos (Continua igual, apenas pelo userId)
-      const resPonto = await fetch(`/api/ponto?userId=${userId}`);
-      const dataPonto = await resPonto.json();
-      setHistorico(Array.isArray(dataPonto) ? dataPonto : []);
-
-      // 3. Busca consumos (Cantina) - AGORA COM FILTRO DE EMPRESA
-      // Passamos userId para ver o que ele comprou, E empresaId para segurança
-      if (empresaId) {
-          const resConsumo = await fetch(`/api/consumos?userId=${userId}&empresaId=${empresaId}`);
-          const dataConsumo = await resConsumo.json();
-          setMeusConsumos(Array.isArray(dataConsumo) ? dataConsumo : []);
-      }
-
-    } catch (error) {
-      console.error("Erro ao buscar dados do usuário", error);
     }
-  }
+
+    checarSessao();
+  }, []);
+
   // ==========================================================
   // 4. EFEITO: TURNO INTELIGENTE + CRONÔMETRO
   // ==========================================================
@@ -301,7 +334,7 @@ export default function Page() {
     toast.success("Lista de contas removida deste navegador.");
   }
 
-  /// ==========================================================
+  // ==========================================================
   // 6. FUNÇÕES DE AUTENTICAÇÃO (API)
   // ==========================================================
   async function handleLogin() {
@@ -315,11 +348,11 @@ export default function Page() {
       const data = await res.json();
 
       if (data.success) {
-        // 1. Salva conta no PC e Atualiza 'point_user' para persistência
+        // 1. Salva conta no PC e Atualiza 'point_user'
         const novaLista = salvarContaNoDispositivo(data.user, contasSalvas);
-        localStorage.setItem("point_user", JSON.stringify(data.user)); // IMPORTANTE PARA O SAAS
+        localStorage.setItem("point_user", JSON.stringify(data.user)); 
 
-        // 2. Verifica se é Admin (Novo padrão 'role')
+        // 2. Verifica se é Admin
         if (data.user.role === "ADMIN" || data.user.role === "SUPER_ADMIN" || data.user.tipo === "admin") {
           atualizarUltimoUso(data.user.email, novaLista);
           router.push("/admin");
@@ -335,14 +368,7 @@ export default function Page() {
 
         // 4. Login Funcionário: Carrega dados passando a Empresa
         setUser(data.user);
-        
-        // Se a função carregarDadosIniciais aceitar 2 parâmetros, passamos o ID da empresa
-        // Se ela ainda for a antiga, vai ignorar o segundo, então não quebra.
-        if (typeof carregarDadosIniciais === 'function') {
-            carregarDadosIniciais(data.user.id, data.user.empresaId);
-        } else {
-            carregarDadosUsuario(data.user.id); // Fallback para nome antigo
-        }
+        carregarDadosUsuario(data.user.id, data.user.empresaId);
         
         atualizarUltimoUso(data.user.email, novaLista);
       } else {
@@ -356,10 +382,9 @@ export default function Page() {
     }
   }
 
- function handleLogout() {
-    // Limpa cookie e localStorage da sessão atual
+  function handleLogout() {
     document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT";
-    localStorage.removeItem("point_user"); // Limpa o usuário atual
+    localStorage.removeItem("point_user"); 
 
     setUser(null);
     setSenha("");
@@ -367,7 +392,6 @@ export default function Page() {
     setErroLogin("");
     setContaSelecionadaInfo(null);
 
-    // Volta para seleção de contas se houver salvas
     if (contasSalvas.length > 0) {
       setModoSelecaoConta(true);
     } else {
@@ -489,7 +513,8 @@ export default function Page() {
 
           if (data.success) {
             toast.success(`${tipoSelecionado} registrado com sucesso!`);
-            carregarDadosUsuario(user.id);
+            // Recarrega dados
+            carregarDadosUsuario(user.id, user.empresaId);
             setTipoSelecionado(null);
           } else {
             toast.error(data.message);
@@ -508,28 +533,6 @@ export default function Page() {
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
-  }
-
-  async function carregarDadosUsuario(id) {
-    try {
-      const resPonto = await fetch(`/api/ponto?userId=${id}`);
-      setHistorico(await resPonto.json());
-
-      const resMsg = await fetch(`/api/mensagens?userId=${id}`);
-      const dataMsg = await resMsg.json();
-
-      const msgObj = {};
-      if (Array.isArray(dataMsg)) {
-        dataMsg.forEach(m => {
-          msgObj[m.dataIso] = m.texto;
-        });
-      }
-      setMensagens(msgObj);
-
-    } catch (e) {
-      console.error("Erro ao carregar dados:", e);
-      toast.error("Erro ao sincronizar dados.");
-    }
   }
 
   async function salvarMensagem(dataIso, texto) {
@@ -713,7 +716,7 @@ export default function Page() {
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-                            conta.tipo === "admin" ? "bg-[#071d41] text-white" : temaEscuro ? "bg-white/10 text-gray-100" : "bg-blue-100 text-blue-700"
+                            conta.role === "ADMIN" || conta.tipo === "admin" ? "bg-[#071d41] text-white" : temaEscuro ? "bg-white/10 text-gray-100" : "bg-blue-100 text-blue-700"
                           }`}>
                             {getIniciais(conta.nome)}
                           </div>
@@ -723,7 +726,7 @@ export default function Page() {
                               <p className={`font-bold leading-tight text-sm ${temaEscuro ? "text-gray-100" : "text-gray-800"}`}>
                                 {conta.nome}
                               </p>
-                              {conta.tipo === "admin" && (
+                              {(conta.role === "ADMIN" || conta.tipo === "admin") && (
                                 <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-bold">
                                   ADMIN
                                 </span>
