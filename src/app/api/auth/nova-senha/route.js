@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+// CORREÇÃO: Importe o prisma do seu lib compartilhado, senão o banco trava por excesso de conexões
+import prisma from '@/lib/prisma'; 
 
 export async function POST(request) {
     try {
@@ -22,12 +21,8 @@ export async function POST(request) {
 
         // 2. TENTATIVA 1: MODO PRIMEIRO ACESSO (Pelo ID)
         if (body.usuarioId !== undefined && body.usuarioId !== null) {
-            console.log(`> Tentando buscar pelo ID: ${body.usuarioId} (Tipo: ${typeof body.usuarioId})`);
+            console.log(`> Tentando buscar pelo ID: ${body.usuarioId}`);
             
-            // Lista todos os IDs do banco para a gente ver se existe
-            const todosUsuarios = await prisma.usuario.findMany({ select: { id: true, nome: true } });
-            console.log("📋 IDs EXISTENTES NO BANCO:", JSON.stringify(todosUsuarios));
-
             // Tenta achar convertendo para Número
             user = await prisma.usuario.findUnique({
                 where: { id: Number(body.usuarioId) }
@@ -37,6 +32,7 @@ export async function POST(request) {
         // 3. TENTATIVA 2: MODO ESQUECI SENHA (Pelo Email + Código)
         else if (body.email && body.codigo) {
             console.log(`> Tentando buscar pelo Email: ${body.email}`);
+            
             user = await prisma.usuario.findFirst({
                 where: { 
                     email: body.email, 
@@ -50,7 +46,7 @@ export async function POST(request) {
         // 4. RESULTADO DA BUSCA
         if (!user) {
             console.log("❌ USUÁRIO NÃO ENCONTRADO NO BANCO!");
-            return NextResponse.json({ success: false, message: "Usuário não localizado." }, { status: 404 });
+            return NextResponse.json({ success: false, message: "Usuário não localizado ou código inválido." }, { status: 404 });
         }
 
         console.log(`✅ Usuário Encontrado: ${user.nome} (ID: ${user.id})`);
@@ -62,7 +58,7 @@ export async function POST(request) {
             data: { 
                 senha: String(novaSenha).trim(),
                 primeiroAcesso: false,
-                codigoRecuperacao: null
+                codigoRecuperacao: null // Queima o código para não usar de novo
             }
         });
 

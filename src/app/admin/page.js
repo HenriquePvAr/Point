@@ -666,28 +666,40 @@ export default function AdminPage() {
     }
   }
 
-  // -- Criar Novo Usuário --
+  // -- Criar Novo Usuário (CORRIGIDO) --
   async function handleNovoUsuario() {
+    // 1. Validação simples
     if (!novoUser.nome || !novoUser.email)
       return toast.warning("Preencha os campos obrigatórios.");
 
     try {
       const res = await fetch("/api/usuarios", {
         method: "POST",
-        body: JSON.stringify(novoUser),
+        headers: { "Content-Type": "application/json" }, // Boa prática adicionar o header
+        body: JSON.stringify({
+            // Espalha os dados do formulário (nome, email, etc)
+            ...novoUser, 
+            
+            // 👇 O PULO DO GATO: Adiciona o vínculo com a empresa e o cargo
+            empresaId: empresaId, 
+            role: "FUNCIONARIO"
+        }),
       });
       const data = await res.json();
 
       if (data.success) {
         setUsuarios([...usuarios, data.usuario]);
         setModalNovoUsuario(false);
-        setNovoUser({ nome: "", email: "", cargo: "" });
+        setNovoUser({ nome: "", email: "", cargo: "" }); // Limpa o form
         toast.success("Colaborador criado com sucesso!");
-        carregarDados();
+        
+        // Recarrega para garantir
+        carregarDados(empresaId); 
       } else {
         toast.error(data.message);
       }
     } catch (error) {
+      console.error(error);
       toast.error("Erro ao conectar com o servidor.");
     }
   }
