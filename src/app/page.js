@@ -132,8 +132,7 @@ export default function Page() {
     setContasSalvas(novaLista);
     localStorage.setItem("point_users", JSON.stringify(novaLista));
   }
-
-  // ==========================================================
+// ==========================================================
   // 3. EFEITO: CARREGA TEMA, CONTAS SALVAS E VERIFICA SESSÃO
   // ==========================================================
   useEffect(() => {
@@ -159,32 +158,49 @@ export default function Page() {
         if (data.success && data.user) {
           // Sempre atualiza a lista do PC
           const listaAtualizada = salvarContaNoDispositivo(data.user, salvos);
+          
+          // Salva dados atualizados na sessão atual também
+          localStorage.setItem("point_user", JSON.stringify(data.user));
 
-          // Se for admin, manda pro /admin
-          if (data.user.tipo === "admin") {
-            // também marca último uso
+          // --- AJUSTE 1: VERIFICAÇÃO DE ADMIN (Novo padrão 'role') ---
+          if (data.user.role === "ADMIN" || data.user.role === "SUPER_ADMIN" || data.user.tipo === "admin") {
             atualizarUltimoUso(data.user.email, listaAtualizada);
             router.push("/admin");
             return;
           }
 
           setUser(data.user);
-          carregarDadosUsuario(data.user.id);
-          atualizarUltimoUso(data.user.email, listaAtualizada);
-          toast.success(`Bem-vindo de volta, ${data.user.nome.split(" ")[0]}!`);
-        } else {
-          if (salvos.length > 0) setModoSelecaoConta(true);
-        }
-      } catch (e) {
-        if (salvos.length > 0) setModoSelecaoConta(true);
-      } finally {
-        setVerificandoSessao(false);
+          // Função atualizada para receber também o ID da Empresa
+  async function carregarDadosUsuario(userId, empresaId) {
+    try {
+      // 1. Busca mensagens (Mural) - AGORA COM FILTRO DE EMPRESA
+      // Se não tiver empresaId (ex: admin master), busca sem filtro ou retorna vazio
+      const urlMsg = empresaId ? `/api/mensagens?empresaId=${empresaId}` : null;
+      
+      let dataMsg = [];
+      if (urlMsg) {
+          const resMsg = await fetch(urlMsg);
+          dataMsg = await resMsg.json();
       }
+      setMensagens(Array.isArray(dataMsg) ? dataMsg : []);
+
+      // 2. Busca histórico de pontos (Continua igual, apenas pelo userId)
+      const resPonto = await fetch(`/api/ponto?userId=${userId}`);
+      const dataPonto = await resPonto.json();
+      setHistorico(Array.isArray(dataPonto) ? dataPonto : []);
+
+      // 3. Busca consumos (Cantina) - AGORA COM FILTRO DE EMPRESA
+      // Passamos userId para ver o que ele comprou, E empresaId para segurança
+      if (empresaId) {
+          const resConsumo = await fetch(`/api/consumos?userId=${userId}&empresaId=${empresaId}`);
+          const dataConsumo = await resConsumo.json();
+          setMeusConsumos(Array.isArray(dataConsumo) ? dataConsumo : []);
+      }
+
+    } catch (error) {
+      console.error("Erro ao buscar dados do usuário", error);
     }
-
-    checarSessao();
-  }, []);
-
+  }
   // ==========================================================
   // 4. EFEITO: TURNO INTELIGENTE + CRONÔMETRO
   // ==========================================================
@@ -285,7 +301,7 @@ export default function Page() {
     toast.success("Lista de contas removida deste navegador.");
   }
 
-  // ==========================================================
+  /// ==========================================================
   // 6. FUNÇÕES DE AUTENTICAÇÃO (API)
   // ==========================================================
   async function handleLogin() {
@@ -299,23 +315,35 @@ export default function Page() {
       const data = await res.json();
 
       if (data.success) {
-        // Salva conta no PC (sem senha)
+        // 1. Salva conta no PC e Atualiza 'point_user' para persistência
         const novaLista = salvarContaNoDispositivo(data.user, contasSalvas);
+        localStorage.setItem("point_user", JSON.stringify(data.user)); // IMPORTANTE PARA O SAAS
 
-        if (data.user.tipo === "admin") {
+        // 2. Verifica se é Admin (Novo padrão 'role')
+        if (data.user.role === "ADMIN" || data.user.role === "SUPER_ADMIN" || data.user.tipo === "admin") {
           atualizarUltimoUso(data.user.email, novaLista);
           router.push("/admin");
           return;
         }
 
+        // 3. Verifica Primeiro Acesso
         if (data.user.primeiroAcesso) {
           setUser(data.user);
           setModalNovaSenha(true);
           return;
         }
 
+        // 4. Login Funcionário: Carrega dados passando a Empresa
         setUser(data.user);
-        carregarDadosUsuario(data.user.id);
+        
+        // Se a função carregarDadosIniciais aceitar 2 parâmetros, passamos o ID da empresa
+        // Se ela ainda for a antiga, vai ignorar o segundo, então não quebra.
+        if (typeof carregarDadosIniciais === 'function') {
+            carregarDadosIniciais(data.user.id, data.user.empresaId);
+        } else {
+            carregarDadosUsuario(data.user.id); // Fallback para nome antigo
+        }
+        
         atualizarUltimoUso(data.user.email, novaLista);
       } else {
         setErroLogin(data.message || "E-mail ou senha inválidos.");
@@ -323,19 +351,23 @@ export default function Page() {
         if (senhaInputRef.current) senhaInputRef.current.focus();
       }
     } catch (e) {
+      console.error(e);
       toast.error("Erro de conexão com o servidor.");
     }
   }
 
-  function handleLogout() {
+ function handleLogout() {
+    // Limpa cookie e localStorage da sessão atual
     document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT";
-    setUser(null);
+    localStorage.removeItem("point_user"); // Limpa o usuário atual
 
+    setUser(null);
     setSenha("");
     setMostrarSenha(false);
     setErroLogin("");
     setContaSelecionadaInfo(null);
 
+    // Volta para seleção de contas se houver salvas
     if (contasSalvas.length > 0) {
       setModoSelecaoConta(true);
     } else {
