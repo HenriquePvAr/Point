@@ -11,25 +11,28 @@ export async function POST(request) {
         const body = await request.json();
         const { email, senha, lembreDeMim } = body;
 
+        // Validação básica
         if (!email || !senha) {
              return NextResponse.json({ success: false, message: "Preencha e-mail e senha." }, { status: 400 });
         }
 
+        // Busca usuário
         const user = await prisma.usuario.findUnique({
             where: { email: email }
         });
 
+        // Verifica senha
         if (!user || user.senha !== senha) {
             return NextResponse.json({ success: false, message: "E-mail ou senha incorretos." }, { status: 401 });
         }
 
-        // === CORREÇÃO AQUI ===
-        // Antes estava (!user.ativo), mas teu banco usa user.status = "ativo"
+        // === VERIFICAÇÃO DE STATUS ===
+        // Garante que só usuários com status "ativo" podem entrar
         if (user.status !== 'ativo') { 
             return NextResponse.json({ success: false, message: "Seu acesso foi desativado pelo administrador." }, { status: 403 });
         }
 
-        // === LÓGICA DO "LEMBRE DE MIM" ===
+        // === LÓGICA DO "LEMBRE DE MIM" (COOKIE 30 DIAS) ===
         if (lembreDeMim) {
             const token = await new SignJWT({ 
                 sub: user.id.toString(), 
@@ -62,6 +65,7 @@ export async function POST(request) {
 }
 
 // 2. VERIFICAR SESSÃO AUTOMÁTICA (GET)
+// Chamado ao abrir o site para ver se já está logado
 export async function GET(request) {
     const token = cookies().get("session_token")?.value;
 
@@ -72,11 +76,12 @@ export async function GET(request) {
     try {
         const { payload } = await jwtVerify(token, SECRET_KEY);
         
+        // Busca dados atualizados (para checar se foi bloqueado recentemente)
         const user = await prisma.usuario.findUnique({
             where: { id: parseInt(payload.sub) }
         });
 
-        // === CORREÇÃO AQUI TAMBÉM ===
+        // Verifica status novamente
         if (!user || user.status !== 'ativo') {
             return NextResponse.json({ success: false });
         }
@@ -91,4 +96,11 @@ export async function GET(request) {
     } catch (error) {
         return NextResponse.json({ success: false });
     }
+}
+
+// 3. LOGOUT (DELETE)
+// Chamado pelo botão "Sair" para destruir o cookie no servidor
+export async function DELETE() {
+    cookies().delete("session_token"); 
+    return NextResponse.json({ success: true });
 }

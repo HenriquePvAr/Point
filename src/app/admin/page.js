@@ -749,7 +749,18 @@ const resPonto = await fetch(`/api/ponto?userId=${user.id}&mes=${mesRelatorio}&a
       u.nome.toLowerCase().includes(termoBusca.toLowerCase()) ||
       (u.email && u.email.toLowerCase().includes(termoBusca.toLowerCase()))
   );
-
+// FUNÇÃO DE LOGOUT CORRIGIDA (Chama o servidor)
+  async function handleLogout() {
+    try {
+      // Pede ao servidor para destruir o cookie
+      await fetch("/api/auth", { method: "DELETE" });
+      // Redireciona para o login
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Erro ao sair", error);
+      window.location.href = "/";
+    }
+  }
   return (
     <div className="min-h-screen bg-gray-50 font-sans flex text-gray-800">
       {/* ======================= SIDEBAR (MENU LATERAL) ======================= */}
@@ -795,8 +806,8 @@ const resPonto = await fetch(`/api/ponto?userId=${user.id}&mes=${mesRelatorio}&a
           />
         </nav>
         <div className="p-4 border-t border-blue-900">
-          <button
-            onClick={() => (window.location.href = "/")}
+       <button
+            onClick={handleLogout}  
             className="flex items-center gap-2 text-sm text-gray-300 hover:text-white w-full p-3 rounded hover:bg-white/10 transition"
           >
             <LogOut size={18} /> Sair do Sistema
