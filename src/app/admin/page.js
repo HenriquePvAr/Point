@@ -76,13 +76,13 @@ export default function AdminPage() {
     cargo: "Gestor",
   });
 
-  // Dados Principais (Banco de Dados Local)
+ // Dados Principais (Banco de Dados Local)
   const [usuarios, setUsuarios] = useState([]);
+  const [empresaId, setEmpresaId] = useState(null); // <--- O NOVO CAMPO
   const [pontosGerais, setPontosGerais] = useState([]);
   const [folgasGerais, setFolgasGerais] = useState([]);
   const [todasMensagens, setTodasMensagens] = useState([]);
   const [dadosGrafico, setDadosGrafico] = useState([]);
-
   // Notificações e Atividades Recentes
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
   const [notificacoes, setNotificacoes] = useState([]);
@@ -123,90 +123,164 @@ export default function AdminPage() {
     imagemUrl: "",
   });
   const [consumoEditando, setConsumoEditando] = useState(null);
-
-  // ==================================================================================
+// ==================================================================================
   // 2. CARREGAMENTO INICIAL DE DADOS (FETCH API)
   // ==================================================================================
 
   useEffect(() => {
-  carregarDados();
-}, [mesRelatorio, anoRelatorio]); // Adiciona estas variáveis aqui
+    // A. Recupera dados do login
+    const dadosUsuario = JSON.parse(localStorage.getItem('point_user') || '{}');
 
-  async function carregarDados() {
+    // B. Verifica se tem o ID da empresa
+    if (dadosUsuario?.empresaId) {
+        setEmpresaId(dadosUsuario.empresaId); 
+        // C. Carrega passando o ID
+        carregarDados(dadosUsuario.empresaId);
+    } else {
+        window.location.href = '/'; // Segurança
+    }
+  }, [mesRelatorio, anoRelatorio]);
+
+
+  async function carregarDados(idDaEmpresa) {
+    // Garante que temos o ID (prioridade para o parâmetro, depois o estado)
+    const idFinal = idDaEmpresa || empresaId;
+
+    if (!idFinal) return; 
+
     try {
       setLoading(true);
 
-      // 1. Buscar dados básicos
+      // ⚠️ AQUI ESTÁ A CORREÇÃO PRINCIPAL:
+      // Adicionamos ?empresaId=${idFinal} em todos os links
       const [resUsers, resMsgs, resNotif] = await Promise.all([
-        fetch("/api/usuarios"),
-        fetch("/api/mensagens"),
-        fetch("/api/notificacoes"),
+        fetch(`/api/usuarios?empresaId=${idFinal}`),    // <--- CORRIGIDO
+        fetch(`/api/mensagens?empresaId=${idFinal}`),   // <--- CORRIGIDO
+        fetch(`/api/notificacoes?empresaId=${idFinal}`),// <--- CORRIGIDO
       ]);
 
       const dataUsers = await resUsers.json();
+      
+      // Atualiza os estados (se as respostas vierem como array)
+      if (Array.isArray(dataUsers)) setUsuarios(dataUsers);
+      
+      // ... processamento dos outros dados (mensagens, notificacoes) ...
+      const dataMsgs = await resMsgs.json();
+      if (Array.isArray(dataMsgs)) setTodasMensagens(dataMsgs);
 
-      // --- Identificar Admin ---
-      const adminEncontrado = dataUsers.find((u) => u.tipo === "admin");
+      // --- Identificar Admin (ATENÇÃO: Mudou de 'tipo' para 'role' no banco novo) ---
+      const adminEncontrado = Array.isArray(dataUsers) 
+        ? dataUsers.find((u) => u.role === "ADMIN" || u.role === "SUPER_ADMIN" || u.cargo === "admin") 
+        : null;
+
       if (adminEncontrado) {
         setAdminUser(adminEncontrado);
       } else {
+        // Fallback visual apenas
         setAdminUser({
-          nome: "Admin Master",
-          email: "admin@sistema.com",
-          cargo: "Gestor",
+          nome: "Gestor",
+          email: "admin@empresa.com",
+          role: "ADMIN",
           id: null,
         });
       }
+      
+      // Continua o código de carregar pontos e folgas...
+      // Lembre-se de passar o ID nas outras funções também se elas forem chamadas aqui
+      // ex: carregarFolgas(idFinal);
 
-      let todosPontos = [];
-      let todasFolgas = [];
+    } catch (error) {
+        console.error("Erro ao carregar dados:", error);
+    } finally {
+        setLoading(false);
+    }
+  }
 
-      // 2. Buscar pontos e folgas de todos os usuários
-      for (let user of dataUsers) {
-        try {
-          // Pontos - AGORA COM FILTRO DE DATA
-const resPonto = await fetch(`/api/ponto?userId=${user.id}&mes=${mesRelatorio}&ano=${anoRelatorio}`);
-          const dataPonto = await resPonto.json();
-          todosPontos = [...todosPontos, ...dataPonto];
+    async function carregarDados(idDaEmpresa) {
+    // 1. Garante que temos o ID da empresa
+    const idFinal = idDaEmpresa || empresaId;
+    if (!idFinal) return; 
 
-          // Folgas
-          const resFolga = await fetch(`/api/folgas?userId=${user.id}`);
-          const dataFolga = await resFolga.json();
+    try {
+      setLoading(true);
 
-          dataFolga.forEach((dataString) => {
-            todasFolgas.push({ usuarioId: user.id, dataIso: dataString });
-          });
-        } catch (e) {
-          console.log(`Erro user ${user.id}`);
-        }
-      }
+      // 2. BUSCA TUDO DE UMA VEZ (Parallel Fetch)
+      // Adicionei a busca de 'folgas' aqui em cima para não precisar fazer loop depois
+      const [resUsers, resMsgs, resNotif, resFolgas] = await Promise.all([
+        fetch(`/api/usuarios?empresaId=${idFinal}`),
+        fetch(`/api/mensagens?empresaId=${idFinal}`),
+        fetch(`/api/notificacoes?empresaId=${idFinal}`),
+        fetch(`/api/folgas?empresaId=${idFinal}`) 
+      ]);
 
+      const dataUsers = await resUsers.json();
       const dataMsg = await resMsgs.json();
       const dataNotif = await resNotif.json();
+      const dataFolgas = await resFolgas.json();
 
-      // Atualiza estados
-      setUsuarios(dataUsers);
-      setPontosGerais(todosPontos);
-      setFolgasGerais(todasFolgas);
-      setTodasMensagens(dataMsg);
+      // --- Define Usuários ---
+      if (Array.isArray(dataUsers)) {
+         setUsuarios(dataUsers);
+         
+         // Acha o admin para exibir no perfil
+         const admin = dataUsers.find(u => u.role === 'ADMIN' || u.role === 'SUPER_ADMIN' || u.cargo === 'admin');
+         if (admin) setAdminUser(admin);
+      }
+      
+      // --- Define Mensagens e Notificações ---
+      setTodasMensagens(Array.isArray(dataMsg) ? dataMsg : []);
       setNotificacoes(Array.isArray(dataNotif) ? dataNotif : []);
 
-      // ============================
-      // NOVO: Carrega Consumos Iniciais
-      // ============================
-      await carregarConsumos();
+      // --- Processa Folgas (Do formato do banco para o App) ---
+      // O banco novo retorna objetos completos, mapeamos para o que o front usa
+      const folgasFormatadas = Array.isArray(dataFolgas) ? dataFolgas.map(f => ({
+          usuarioId: f.usuarioId,
+          dataIso: f.data // O campo data vem do banco
+      })) : [];
+      setFolgasGerais(folgasFormatadas);
 
-      // --- GERA DADOS DO GRÁFICO ---
-      processarGrafico(todosPontos);
+
+      // 3. BUSCAR PONTOS (Aqui mantemos o loop pois depende do filtro de Mês/Ano)
+      let todosPontos = [];
+      
+      if (Array.isArray(dataUsers)) {
+        for (let user of dataUsers) {
+            try {
+                // Busca pontos do usuário no mês selecionado
+                const resPonto = await fetch(`/api/ponto?userId=${user.id}&mes=${mesRelatorio}&ano=${anoRelatorio}`);
+                const dataPonto = await resPonto.json();
+                
+                if (Array.isArray(dataPonto)) {
+                    todosPontos = [...todosPontos, ...dataPonto];
+                }
+            } catch (err) {
+                console.warn(`Erro ao buscar pontos do user ${user.id}`, err);
+            }
+        }
+      }
+      setPontosGerais(todosPontos);
+
+      // 4. Carregar Consumos (Passando o ID corretamente)
+      // Verifica se a função existe antes de chamar
+      if (typeof carregarConsumos === 'function') {
+          await carregarConsumos(idFinal); // <--- Correção: passando idFinal
+      }
+
+      // 5. Atualiza Gráfico
+      if (typeof processarGrafico === 'function') {
+          processarGrafico(todosPontos);
+      }
 
       setLoading(false);
+
     } catch (error) {
-      console.error(error);
-      toast.error("Erro ao carregar dados.");
+      console.error("Erro geral ao carregar dados:", error);
+      // toast.error("Erro de conexão."); // Descomente se tiver toast
       setLoading(false);
     }
   }
 
+      
   // --- FUNÇÃO PARA GERAR O GRÁFICO (Últimos 7 dias) ---
   function processarGrafico(pontos) {
     const hoje = new Date();
