@@ -46,7 +46,6 @@ import {
   DollarSign,
   Image as ImageIcon,
 
-  // ✅ ASSINATURA (NOVO)
   CreditCard,
   AlertTriangle,
   Copy,
@@ -290,7 +289,8 @@ export default function AdminPage() {
               `/api/ponto?userId=${user.id}&mes=${mesRelatorio}&ano=${anoRelatorio}`
             );
             const dataPonto = await resPonto.json();
-            if (Array.isArray(dataPonto)) todosPontos = [...todosPontos, ...dataPonto];
+            if (Array.isArray(dataPonto))
+              todosPontos = [...todosPontos, ...dataPonto];
           } catch (err) {
             console.warn(`Erro ao buscar pontos do user ${user.id}`, err);
           }
@@ -831,6 +831,8 @@ export default function AdminPage() {
     }
   }
 
+  const empresaBloqueada = empresa?.ativo === false;
+
   // ==================================================================================
   // 9. RENDER
   // ==================================================================================
@@ -880,7 +882,6 @@ export default function AdminPage() {
             }}
           />
 
-          {/* ✅ NOVO BOTÃO: ASSINATURA */}
           <BotaoMenu
             icon={<CreditCard size={20} />}
             text="Minha Assinatura"
@@ -905,926 +906,1104 @@ export default function AdminPage() {
 
       {/* ======================= CONTEÚDO ======================= */}
       <main className="ml-64 flex-1 p-8 print:ml-0 print:p-0 print:w-full">
-        <header className="flex justify-between items-center mb-8 relative print:hidden">
-          <div>
-            <h2 className="text-2xl font-bold text-[#071d41]">
-              {usuarioSelecionado
-                ? `Gestão: ${usuarioSelecionado.nome}`
-                : view === "relatorios"
-                ? "Relatórios Mensais"
-                : view === "consumos"
-                ? "Consumos"
-                : view === "assinatura"
-                ? "Minha Assinatura"
-                : "Painel de Controle"}
-            </h2>
-            <p className="text-gray-500 text-sm">
-              Administração e monitoramento de ponto.
+        {/* 🔴 TRAVA: se empresa estiver bloqueada, só permite a aba de assinatura */}
+        {!loading && empresaBloqueada && view !== "assinatura" ? (
+          <div className="flex flex-col items-center justify-center h-[70vh] text-center animate-fade-in">
+            <AlertTriangle size={80} className="text-red-500 mb-6" />
+            <h2 className="text-3xl font-black text-[#071d41]">ACESSO SUSPENSO</h2>
+            <p className="text-gray-500 max-w-md mb-8">
+              Não identificámos o pagamento da sua mensalidade ou a sua conta foi desativada.
             </p>
-          </div>
-
-          <div className="flex items-center gap-4">
-            {/* NOTIFICAÇÕES */}
-            <div className="relative">
-              <button
-                onClick={() => setMostrarNotificacoes(!mostrarNotificacoes)}
-                className="bg-white p-2.5 rounded-full shadow-sm border border-gray-200 cursor-pointer hover:bg-gray-50 relative transition"
-              >
-                <Bell size={20} className="text-gray-500" />
-                {notificacoes.length > 0 && (
-                  <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
-                )}
-              </button>
-
-              {mostrarNotificacoes && (
-                <div className="absolute right-0 mt-3 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-scale-in overflow-hidden">
-                  <div className="p-3 border-b border-gray-100 font-bold text-[#071d41] text-sm flex justify-between items-center bg-gray-50">
-                    Atividades Recentes
-                    <span
-                      onClick={() => setMostrarNotificacoes(false)}
-                      className="cursor-pointer text-gray-400 hover:text-red-500"
-                    >
-                      <X size={16} />
-                    </span>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto">
-                    {notificacoes.map((notif, i) => (
-                      <div
-                        key={i}
-                        className="p-3 border-b border-gray-50 hover:bg-blue-50 text-sm transition"
-                      >
-                        <p className="font-bold text-[#1351b4]">
-                          {notif.usuario ? notif.usuario.nome : "Usuário Desconhecido"}
-                        </p>
-                        <div className="flex justify-between text-xs text-gray-500 mt-1">
-                          <span className="font-medium bg-gray-100 px-1 rounded">
-                            {notif.tipo}
-                          </span>
-                          <span>
-                            {new Date(notif.criadoEm).toLocaleTimeString("pt-BR")}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                    {notificacoes.length === 0 && (
-                      <p className="p-4 text-center text-gray-400 text-sm">
-                        Nenhuma atividade recente.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* PERFIL ADMIN */}
-            <div className="flex items-center gap-3 pl-4 border-l">
-              <div className="text-right hidden md:block">
-                <p className="text-sm font-bold text-[#071d41]">{adminUser.nome}</p>
-                <p className="text-xs text-gray-500">{adminUser.cargo}</p>
-              </div>
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md relative group">
-                {adminUser.nome ? adminUser.nome.substring(0, 2).toUpperCase() : "AD"}
-                <button
-                  onClick={abrirEdicaoAdmin}
-                  className="absolute -bottom-1 -right-1 bg-white text-blue-600 rounded-full p-1 border border-gray-200 shadow-sm hover:bg-blue-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Editar Meus Dados"
-                >
-                  <Edit3 size={10} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {loading ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-400 animate-pulse">
-            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-            <p>Carregando dados do sistema...</p>
+            <button
+              onClick={() => {
+                setView("assinatura");
+                setUsuarioSelecionado(null);
+                setRelatorioDetalhado(null);
+              }}
+              className="bg-[#1351b4] text-white px-8 py-3 rounded-full font-bold shadow-lg hover:bg-blue-800 transition"
+            >
+              VERIFICAR ASSINATURA / PAGAR
+            </button>
           </div>
         ) : (
           <>
-            {/* ===================== DASHBOARD ===================== */}
-            {view === "dashboard" && !usuarioSelecionado && (
-              <div className="space-y-6 animate-fade-in print:hidden">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <CardResumo
-                    titulo="Colaboradores Ativos"
-                    valor={usuarios.filter((u) => u.status === "ativo").length}
-                    icon={<CheckCircle className="text-blue-500" />}
-                    cor="border-l-4 border-blue-500"
-                  />
-                  <CardResumo
-                    titulo="Trabalhando Agora"
-                    valor={usuarios.filter((u) => getStatusUsuario(u.id) === "online").length}
-                    icon={<Clock className="text-green-500" />}
-                    cor="border-l-4 border-green-500"
-                  />
-                  <CardResumo
-                    titulo="Inativos / Bloqueados"
-                    valor={usuarios.filter((u) => u.status === "inativo").length}
-                    icon={<UserX className="text-red-500" />}
-                    cor="border-l-4 border-red-500"
-                  />
-                </div>
-
-                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                  <h3 className="font-bold text-[#071d41] mb-4 text-sm uppercase tracking-wide">
-                    Produtividade da Equipe (Últimos 7 dias)
-                  </h3>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={dadosGrafico}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} dy={10} />
-                        <YAxis axisLine={false} tickLine={false} />
-                        <Tooltip cursor={{ fill: "transparent" }} />
-                        <Bar dataKey="horas" radius={[4, 4, 0, 0]} barSize={40} name="Horas Trabalhadas" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center bg-gray-50 gap-4">
-                    <h3 className="font-bold text-[#071d41] text-lg">
-                      Gerenciar Colaboradores
-                    </h3>
-                    <div className="flex gap-2 w-full md:w-auto">
-                      <div className="relative flex-1 md:flex-none">
-                        <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                        <input
-                          type="text"
-                          placeholder="Buscar nome ou email..."
-                          className="pl-9 pr-4 py-2 border rounded-full text-sm focus:outline-blue-500 w-full md:w-64 bg-white"
-                          value={termoBusca}
-                          onChange={(e) => setTermoBusca(e.target.value)}
-                        />
-                      </div>
-                      <button
-                        onClick={() => setModalNovoUsuario(true)}
-                        className="bg-[#1351b4] hover:bg-blue-800 text-white px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition shadow-sm"
-                      >
-                        <UserPlus size={16} /> <span className="hidden md:inline">Adicionar</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-xs">
-                        <tr>
-                          <th className="p-4">Colaborador</th>
-                          <th className="p-4">Cargo</th>
-                          <th className="p-4 text-center">Acesso</th>
-                          <th className="p-4 text-center">Status Hoje</th>
-                          <th className="p-4 text-center">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {usuariosFiltrados.length === 0 && (
-                          <tr>
-                            <td colSpan="5" className="p-8 text-center text-gray-400 italic">
-                              Nenhum colaborador encontrado com esse termo.
-                            </td>
-                          </tr>
-                        )}
-                        {usuariosFiltrados.map((user) => {
-                          const statusHoje = getStatusUsuario(user.id);
-                          return (
-                            <tr
-                              key={user.id}
-                              className={`hover:bg-blue-50 transition ${
-                                user.status === "inativo" ? "opacity-60 bg-gray-50" : ""
-                              }`}
-                            >
-                              <td className="p-4">
-                                <div className="font-bold text-[#071d41] text-base">
-                                  {user.nome}
-                                </div>
-                                <div className="text-xs text-gray-400 flex flex-col">
-                                  {user.email ? <span>{user.email}</span> : <span>Sem e-mail</span>}
-                                </div>
-                              </td>
-                              <td className="p-4 text-gray-600 font-medium">{user.cargo}</td>
-                              <td className="p-4 text-center">
-                                <span
-                                  className={`px-2 py-1 rounded text-xs font-bold border ${
-                                    user.status === "ativo"
-                                      ? "bg-green-100 text-green-700 border-green-200"
-                                      : "bg-red-100 text-red-700 border-red-200"
-                                  }`}
-                                >
-                                  {user.status.toUpperCase()}
-                                </span>
-                              </td>
-                              <td className="p-4 text-center">
-                                <BadgeStatus status={statusHoje} />
-                              </td>
-                              <td className="p-4 text-center">
-                                <div className="flex items-center justify-center gap-2">
-                                  <button
-                                    onClick={() => setUsuarioSelecionado(user)}
-                                    className="bg-blue-100 text-[#1351b4] p-2 rounded hover:bg-blue-200 transition"
-                                    title="Ver Espelho de Ponto"
-                                  >
-                                    <Eye size={18} />
-                                  </button>
-                                  <button
-                                    onClick={() => abrirEdicao(user)}
-                                    className="bg-orange-100 text-orange-600 p-2 rounded hover:bg-orange-200 transition"
-                                    title="Editar Dados"
-                                  >
-                                    <Edit3 size={18} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleExcluirUsuario(user)}
-                                    className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200 transition"
-                                    title="Excluir Colaborador"
-                                  >
-                                    <Trash2 size={18} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+            <header className="flex justify-between items-center mb-8 relative print:hidden">
+              <div>
+                <h2 className="text-2xl font-bold text-[#071d41]">
+                  {usuarioSelecionado
+                    ? `Gestão: ${usuarioSelecionado.nome}`
+                    : view === "relatorios"
+                    ? "Relatórios Mensais"
+                    : view === "consumos"
+                    ? "Consumos"
+                    : view === "assinatura"
+                    ? "Minha Assinatura"
+                    : "Painel de Controle"}
+                </h2>
+                <p className="text-gray-500 text-sm">
+                  Administração e monitoramento de ponto.
+                </p>
               </div>
-            )}
 
-            {/* ===================== RELATÓRIOS ===================== */}
-            {view === "relatorios" && !usuarioSelecionado && !relatorioDetalhado && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="hidden print:block text-center mb-6">
-                  <h1 className="text-2xl font-bold">Relatório Geral de Ponto</h1>
-                  <p className="text-sm">
-                    Período:{" "}
-                    {
-                      [
-                        "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-                        "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
-                      ][mesRelatorio]
-                    }{" "}
-                    / {anoRelatorio}
-                  </p>
-                </div>
+              <div className="flex items-center gap-4">
+                {/* NOTIFICAÇÕES */}
+                <div className="relative">
+                  <button
+                    onClick={() => setMostrarNotificacoes(!mostrarNotificacoes)}
+                    className="bg-white p-2.5 rounded-full shadow-sm border border-gray-200 cursor-pointer hover:bg-gray-50 relative transition"
+                  >
+                    <Bell size={20} className="text-gray-500" />
+                    {notificacoes.length > 0 && (
+                      <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
+                    )}
+                  </button>
 
-                <div className="bg-white p-6 rounded shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center print:border-none print:shadow-none print:p-0">
-                  <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg print:hidden">
-                    <FileText size={24} className="text-[#1351b4]" /> Relatório Mensal de Ponto
-                  </h3>
-
-                  <div className="flex gap-2 print:hidden">
-                    <select
-                      value={mesRelatorio}
-                      onChange={(e) => setMesRelatorio(Number(e.target.value))}
-                      className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer"
-                    >
-                      {[
-                        "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-                        "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
-                      ].map((m, i) => (
-                        <option key={i} value={i}>{m}</option>
-                      ))}
-                    </select>
-
-                    <select
-                      value={anoRelatorio}
-                      onChange={(e) => setAnoRelatorio(Number(e.target.value))}
-                      className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer"
-                    >
-                      {Array.from({ length: 5 }, (_, i) => 2026 + i).map((a) => (
-                        <option key={a} value={a}>{a}</option>
-                      ))}
-                    </select>
-
-                    <button
-                      onClick={handleExportarExcel}
-                      className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition shadow-sm"
-                    >
-                      <FileSpreadsheet size={16} /> Excel
-                    </button>
-
-                    <button
-                      onClick={() => window.print()}
-                      className="bg-red-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-red-700 transition shadow-sm"
-                    >
-                      <Printer size={16} /> PDF
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded shadow-sm border overflow-hidden print:border print:shadow-none">
-                  <table className="w-full text-left text-sm print:text-xs border-collapse">
-                    <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-xs print:bg-gray-200">
-                      <tr>
-                        <th className="p-3 border">Colaborador</th>
-                        <th className="p-3 border text-center">Horas Trabalhadas</th>
-                        <th className="p-3 border text-center">Saldo de Horas</th>
-                        <th className="p-3 border text-center">Dias de Folga</th>
-                        <th className="p-3 border text-center print:hidden">Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dadosRelatorio.map((rel) => (
-                        <tr key={rel.id} className="hover:bg-gray-50 transition print:break-inside-avoid">
-                          <td className="p-3 border font-bold text-[#071d41]">
-                            {rel.nome}
-                            <br />
-                            <span className="text-[10px] text-gray-500 font-normal">
-                              {rel.email}
-                            </span>
-                          </td>
-                          <td className="p-3 border text-center font-mono text-gray-700 font-medium">
-                            {rel.totalHoras}
-                          </td>
-                          <td className="p-3 border text-center font-bold">
-                            <span
-                              className={`px-2 py-1 rounded ${
-                                rel.saldoMinutos >= 0
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-red-100 text-red-700"
-                              }`}
-                            >
-                              {formatarSaldo(rel.saldoMinutos)}
-                            </span>
-                          </td>
-                          <td className="p-3 border text-center">
-                            {rel.diasFolga > 0 ? (
-                              <span className="bg-blue-100 text-blue-700 px-2 rounded text-xs font-bold border border-blue-200 print:border-black">
-                                {rel.diasFolga} Dias Folga
-                              </span>
-                            ) : rel.faltas.length > 0 ? (
-                              <div className="flex flex-wrap gap-1 justify-center">
-                                {rel.faltas.slice(0, 5).map((f, i) => (
-                                  <span
-                                    key={i}
-                                    className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-200"
-                                  >
-                                    {f}
-                                  </span>
-                                ))}
-                                {rel.faltas.length > 5 && (
-                                  <span className="text-xs text-gray-500">
-                                    +{rel.faltas.length - 5}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-green-500 font-bold text-xs flex items-center justify-center gap-1">
-                                <CheckCircle size={12} /> 100% Presente
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-3 border text-center print:hidden">
-                            <button
-                              onClick={() => setRelatorioDetalhado(rel)}
-                              className="bg-[#1351b4] text-white px-3 py-1 rounded text-xs hover:bg-blue-800 flex items-center gap-1 mx-auto transition shadow-sm"
-                            >
-                              <FileText size={14} /> Abrir Folha
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {dadosRelatorio.length === 0 && (
-                        <tr>
-                          <td colSpan="5" className="p-10 text-center text-gray-400">
-                            Nenhum dado encontrado para o período selecionado.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="mt-4 p-4 bg-blue-50 rounded border border-blue-100 text-xs text-blue-800 flex items-start gap-2 print:hidden">
-                  <AlertCircle size={16} className="mt-0.5" />
-                  <p>
-                    <strong>Nota do Sistema:</strong> Dias marcados como Folga não descontam horas do saldo.
-                    Dias sem ponto e sem folga descontam 8 horas.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* ===================== CONSUMOS ===================== */}
-            {view === "consumos" && !usuarioSelecionado && !relatorioDetalhado && (
-              <div className="space-y-6 animate-fade-in print:hidden">
-                <div className="bg-white p-6 rounded shadow-sm border border-gray-200">
-                  <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                    <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg">
-                      <ShoppingBag size={24} className="text-[#1351b4]" /> Controle de Consumo (15 Dias)
-                    </h3>
-                    <div className="flex gap-2 w-full md:w-auto">
-                      <select
-                        className="border p-2 rounded text-sm w-full md:w-64"
-                        onChange={(e) => setColaboradorConsumo(e.target.value)}
-                        value={colaboradorConsumo || ""}
-                      >
-                        <option value="">Selecione um Funcionário...</option>
-                        {usuarios.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.nome}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => {
-                          if (!colaboradorConsumo)
-                            return toast.warning("Selecione um funcionário!");
-                          setConsumoEditando(null);
-                          setNovoConsumo({ nomeItem: "", valor: "", imagemUrl: "" });
-                          setModalNovoConsumo(true);
-                        }}
-                        className="bg-[#1351b4] text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-blue-800"
-                      >
-                        <PlusCircle size={16} /> Adicionar Item
-                      </button>
-                    </div>
-                  </div>
-
-                  {colaboradorConsumo ? (
-                    <>
-                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center mb-6">
-                        <div>
-                          <p className="text-xs font-bold text-blue-500 uppercase">
-                            Total a Pagar
-                          </p>
-                          <p className="text-2xl font-black text-[#071d41]">
-                            {new Intl.NumberFormat("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            }).format(totalConsumo)}
-                          </p>
-                        </div>
-                        <p className="text-xs text-gray-400 max-w-xs text-right hidden md:block">
-                          Itens mais antigos que 15 dias são removidos automaticamente.
-                        </p>
+                  {mostrarNotificacoes && (
+                    <div className="absolute right-0 mt-3 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-scale-in overflow-hidden">
+                      <div className="p-3 border-b border-gray-100 font-bold text-[#071d41] text-sm flex justify-between items-center bg-gray-50">
+                        Atividades Recentes
+                        <span
+                          onClick={() => setMostrarNotificacoes(false)}
+                          className="cursor-pointer text-gray-400 hover:text-red-500"
+                        >
+                          <X size={16} />
+                        </span>
                       </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {listaConsumos
-                          .filter(
-                            (c) => Number(c.usuarioId) === Number(colaboradorConsumo)
-                          )
-                          .map((item) => (
-                            <div
-                              key={item.id}
-                              className="bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition flex gap-4"
-                            >
-                              <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                                {item.imagemUrl ? (
-                                  <img
-                                    src={item.imagemUrl}
-                                    alt="Item"
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <ImageIcon size={24} className="text-gray-300" />
+                      <div className="max-h-64 overflow-y-auto">
+                        {notificacoes.map((notif, i) => (
+                          <div
+                            key={i}
+                            className="p-3 border-b border-gray-50 hover:bg-blue-50 text-sm transition"
+                          >
+                            <p className="font-bold text-[#1351b4]">
+                              {notif.usuario
+                                ? notif.usuario.nome
+                                : "Usuário Desconhecido"}
+                            </p>
+                            <div className="flex justify-between text-xs text-gray-500 mt-1">
+                              <span className="font-medium bg-gray-100 px-1 rounded">
+                                {notif.tipo}
+                              </span>
+                              <span>
+                                {new Date(notif.criadoEm).toLocaleTimeString(
+                                  "pt-BR"
                                 )}
-                              </div>
-                              <div className="flex-1">
-                                <h4 className="font-bold text-gray-800">
-                                  {item.nomeItem}
-                                </h4>
-                                <p className="text-sm text-green-600 font-bold">
-                                  R$ {Number(item.valor || 0).toFixed(2).replace(".", ",")}
-                                </p>
-                                <p className="text-[10px] text-gray-400 mt-1">
-                                  {new Date(item.data).toLocaleDateString("pt-BR")}
-                                </p>
-                              </div>
-                              <div className="flex flex-col justify-between">
-                                <button
-                                  onClick={() => abrirModalEdicaoConsumo(item)}
-                                  className="text-blue-400 hover:text-blue-600"
-                                >
-                                  <Edit3 size={16} />
-                                </button>
-                                <button
-                                  onClick={() => handleExcluirConsumo(item.id)}
-                                  className="text-red-400 hover:text-red-600"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
+                              </span>
                             </div>
-                          ))}
+                          </div>
+                        ))}
+                        {notificacoes.length === 0 && (
+                          <p className="p-4 text-center text-gray-400 text-sm">
+                            Nenhuma atividade recente.
+                          </p>
+                        )}
                       </div>
-                    </>
-                  ) : (
-                    <div className="text-center p-10 text-gray-400 bg-gray-50 rounded border-2 border-dashed">
-                      Selecione um funcionário acima.
                     </div>
                   )}
                 </div>
-              </div>
-            )}
 
-            {/* ===================== ASSINATURA (NOVO) ===================== */}
-            {view === "assinatura" && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                    <CreditCard className="text-[#1351b4]" /> Gestão da Assinatura
-                  </h2>
-
-                  <button
-                    onClick={() => atualizarEmpresa(empresaId)}
-                    className="text-sm font-bold px-4 py-2 rounded border bg-white hover:bg-gray-50"
-                  >
-                    Atualizar Status
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-sm font-bold text-gray-500 uppercase mb-4">
-                      Status da Conta
-                    </h3>
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`p-2 rounded-full ${
-                          empresa?.ativo
-                            ? "bg-green-100 text-green-700"
-                            : "bg-red-100 text-red-700"
-                        }`}
-                      >
-                        {empresa?.ativo ? (
-                          <CheckCircle size={24} />
-                        ) : (
-                          <AlertTriangle size={24} />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold">
-                          {empresa?.ativo ? "Ativa" : "Bloqueada"}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {empresa?.ativo
-                            ? "Acesso total liberado"
-                            : "Pagamento pendente"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-sm font-bold text-gray-500 uppercase mb-4">
-                      Próximo Vencimento
-                    </h3>
-                    <p className="text-3xl font-bold text-[#1351b4]">
-                      {empresa?.pagoAte
-                        ? new Date(empresa.pagoAte).toLocaleDateString("pt-BR")
-                        : "--/--/----"}
+                {/* PERFIL ADMIN */}
+                <div className="flex items-center gap-3 pl-4 border-l">
+                  <div className="text-right hidden md:block">
+                    <p className="text-sm font-bold text-[#071d41]">
+                      {adminUser.nome}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Mantenha em dia para evitar bloqueios.
-                    </p>
+                    <p className="text-xs text-gray-500">{adminUser.cargo}</p>
                   </div>
-
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-sm font-bold text-gray-500 uppercase mb-4">
-                      Plano Atual
-                    </h3>
-                    <p className="text-2xl font-bold text-gray-800 capitalize">
-                      {empresa?.plano || "Mensal"}
-                    </p>
-                    <p className="text-sm text-gray-500">R$ 160,00 / mês</p>
-                  </div>
-                </div>
-
-                <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
-                  <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-4">
-                    Renovar Agora
-                  </h3>
-
-                  <div className="flex flex-col md:flex-row gap-8 items-start">
-                    <div className="flex-1 w-full">
-                      <p className="text-gray-600 mb-6 text-sm">
-                        Selecione o período para renovação via Pix (Liberação
-                        Imediata):
-                      </p>
-
-                      <div className="flex gap-4 mb-6">
-                        <button
-                          onClick={() => gerarPagamento("MENSAL")}
-                          disabled={loadingPix}
-                          className="flex-1 border-2 border-[#1351b4] bg-blue-50 text-[#1351b4] py-4 rounded-lg font-bold hover:bg-[#1351b4] hover:text-white transition disabled:opacity-60"
-                        >
-                          Mensal{" "}
-                          <span className="block text-xs font-normal">
-                            R$ 160,00
-                          </span>
-                        </button>
-
-                        <button
-                          onClick={() => gerarPagamento("ANUAL")}
-                          disabled={loadingPix}
-                          className="flex-1 border border-gray-200 text-gray-600 py-4 rounded-lg font-bold hover:border-green-500 hover:text-green-600 transition disabled:opacity-60"
-                        >
-                          Anual{" "}
-                          <span className="block text-xs font-normal">
-                            R$ 1.600,00
-                          </span>
-                        </button>
-                      </div>
-
-                      {loadingPix && (
-                        <div className="text-center text-blue-600 flex justify-center gap-2">
-                          <Loader2 className="animate-spin" /> Gerando Pix...
-                        </div>
-                      )}
-                    </div>
-
-                    {pixData && (
-                      <div className="flex-1 bg-gray-50 p-4 rounded-lg border border-gray-200 text-center w-full animate-scale-in">
-                        <p className="text-sm font-bold text-green-700 mb-2 flex justify-center gap-1">
-                          <CheckCircle size={16} /> Pix Gerado!
-                        </p>
-
-                        <img
-                          src={`data:image/png;base64,${pixData.qrCodeImage}`}
-                          alt="QR Pix"
-                          className="w-40 h-40 mx-auto border-4 border-white shadow-sm mb-4"
-                        />
-
-                        <div className="relative">
-                          <input
-                            readOnly
-                            value={pixData.pixCopiaCola}
-                            className="w-full text-[10px] font-mono bg-white border p-2 pr-8 rounded text-gray-500"
-                          />
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(pixData.pixCopiaCola);
-                              toast.success("Copiado!");
-                            }}
-                            className="absolute right-1 top-1 p-1 hover:text-blue-600 text-gray-400"
-                            title="Copiar"
-                          >
-                            <Copy size={14} />
-                          </button>
-                        </div>
-
-                        <p className="text-[11px] text-gray-400 mt-3">
-                          Depois do pagamento, clique em{" "}
-                          <b>Atualizar Status</b>.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ===================== FOLHA DETALHADA ===================== */}
-            {relatorioDetalhado && (
-              <div className="bg-white p-8 max-w-4xl mx-auto shadow-lg print:shadow-none print:w-full animate-fade-in">
-                <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-6">
-                  <div>
-                    <h1 className="text-2xl font-black text-gray-900 uppercase tracking-wide">
-                      Pinguim Manoa
-                    </h1>
-                    <p className="text-sm text-gray-500 font-bold">
-                      Folha de Ponto Individual
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-gray-900">
-                      Período:{" "}
-                      {
-                        [
-                          "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-                          "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
-                        ][mesRelatorio]
-                      }{" "}
-                      / {anoRelatorio}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      Gerado em: {new Date().toLocaleString("pt-BR")}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mb-6 bg-gray-50 p-4 rounded border border-gray-200 print:bg-transparent print:border-gray-300">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="font-bold text-gray-600">Colaborador:</span>{" "}
-                      <span className="text-gray-900 uppercase ml-2">
-                        {relatorioDetalhado.nome}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="font-bold text-gray-600">Cargo:</span>{" "}
-                      <span className="text-gray-900 uppercase ml-2">
-                        {relatorioDetalhado.cargo || "Não informado"}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="font-bold text-gray-600">Email:</span>{" "}
-                      <span className="text-gray-900 ml-2">
-                        {relatorioDetalhado.email}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="font-bold text-gray-600">Saldo do Mês:</span>{" "}
-                      <span
-                        className={`font-bold ml-2 ${
-                          relatorioDetalhado.saldoMinutos >= 0
-                            ? "text-green-700"
-                            : "text-red-700"
-                        }`}
-                      >
-                        {formatarSaldo(relatorioDetalhado.saldoMinutos)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <table className="w-full text-xs md:text-sm border-collapse border border-gray-300 mb-8">
-                  <thead className="bg-gray-100 print:bg-gray-200 text-gray-800 font-bold uppercase">
-                    <tr>
-                      <th className="border border-gray-300 p-2 text-left">Data</th>
-                      <th className="border border-gray-300 p-2 text-center">Entrada</th>
-                      <th className="border border-gray-300 p-2 text-center">Saída</th>
-                      <th className="border border-gray-300 p-2 text-center">H. Trab</th>
-                      <th className="border border-gray-300 p-2 text-center">Saldo</th>
-                      <th className="border border-gray-300 p-2 text-center">Situação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {gerarDiasDoMesParaRelatorio(
-                      mesRelatorio,
-                      anoRelatorio,
-                      pontosGerais.filter((p) => p.usuarioId === relatorioDetalhado.id),
-                      folgasGerais.filter((f) => f.usuarioId === relatorioDetalhado.id)
-                    ).map((dia, idx) => (
-                      <tr key={idx} className="print:break-inside-avoid">
-                        <td className="border border-black p-1">{dia.dataFormatada}</td>
-                        <td className="border border-black p-1 text-center">{dia.entrada}</td>
-                        <td className="border border-black p-1 text-center">{dia.saida}</td>
-                        <td className="border border-black p-1 text-center font-mono">
-                          {dia.horasTrabalhadas}
-                        </td>
-                        <td className="border border-black p-1 text-center font-bold">
-                          {dia.saldo}
-                        </td>
-                        <td className="border border-black p-1 text-center">{dia.status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                <div className="mt-8 flex flex-col md:flex-row justify-center gap-4 print:hidden">
-                  <button
-                    onClick={() => setRelatorioDetalhado(null)}
-                    className="px-6 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center justify-center gap-2 transition"
-                  >
-                    <ArrowLeft size={18} /> Voltar
-                  </button>
-
-                  <button
-                    onClick={() => handleEnviarEmailRelatorio(relatorioDetalhado)}
-                    className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg transition"
-                  >
-                    <Mail size={18} /> Enviar por E-mail
-                  </button>
-
-                  <button
-                    onClick={() => window.print()}
-                    className="px-6 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg transition"
-                  >
-                    <Printer size={18} /> Imprimir Folha
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ===================== HISTÓRICO DO USUÁRIO ===================== */}
-            {usuarioSelecionado && (
-              <div className="animate-fade-in space-y-6 print:hidden">
-                <div className="flex justify-between items-center">
-                  <button
-                    onClick={() => setUsuarioSelecionado(null)}
-                    className="text-sm text-gray-500 hover:text-[#1351b4] flex items-center gap-1 font-bold transition"
-                  >
-                    <ChevronDown size={16} className="rotate-90" /> Voltar para Lista
-                  </button>
-
-                  <div className="flex gap-2">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold shadow-md relative group">
+                    {adminUser.nome
+                      ? adminUser.nome.substring(0, 2).toUpperCase()
+                      : "AD"}
                     <button
-                      onClick={() => toggleStatusUsuario(usuarioSelecionado)}
-                      className={`px-4 py-2 rounded text-sm font-bold flex items-center gap-2 transition shadow-sm ${
-                        usuarioSelecionado.status === "ativo"
-                          ? "bg-red-100 text-red-700 hover:bg-red-200 border border-red-200"
-                          : "bg-green-100 text-green-700 hover:bg-green-200 border border-green-200"
-                      }`}
+                      onClick={abrirEdicaoAdmin}
+                      className="absolute -bottom-1 -right-1 bg-white text-blue-600 rounded-full p-1 border border-gray-200 shadow-sm hover:bg-blue-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Editar Meus Dados"
                     >
-                      {usuarioSelecionado.status === "ativo" ? (
-                        <>
-                          <Lock size={16} /> Bloquear Acesso
-                        </>
-                      ) : (
-                        <>
-                          <Unlock size={16} /> Desbloquear Acesso
-                        </>
-                      )}
+                      <Edit3 size={10} />
                     </button>
                   </div>
                 </div>
+              </div>
+            </header>
 
-                <div className="bg-white p-6 rounded shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-2xl font-bold">
-                      {usuarioSelecionado.nome.charAt(0)}
+            {loading ? (
+              <div className="flex flex-col items-center justify-center h-64 text-gray-400 animate-pulse">
+                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                <p>Carregando dados do sistema...</p>
+              </div>
+            ) : (
+              <>
+                {/* ===================== DASHBOARD ===================== */}
+                {view === "dashboard" && !usuarioSelecionado && (
+                  <div className="space-y-6 animate-fade-in print:hidden">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <CardResumo
+                        titulo="Colaboradores Ativos"
+                        valor={usuarios.filter((u) => u.status === "ativo").length}
+                        icon={<CheckCircle className="text-blue-500" />}
+                        cor="border-l-4 border-blue-500"
+                      />
+                      <CardResumo
+                        titulo="Trabalhando Agora"
+                        valor={
+                          usuarios.filter((u) => getStatusUsuario(u.id) === "online")
+                            .length
+                        }
+                        icon={<Clock className="text-green-500" />}
+                        cor="border-l-4 border-green-500"
+                      />
+                      <CardResumo
+                        titulo="Inativos / Bloqueados"
+                        valor={usuarios.filter((u) => u.status === "inativo").length}
+                        icon={<UserX className="text-red-500" />}
+                        cor="border-l-4 border-red-500"
+                      />
                     </div>
-                    <div>
-                      <h2 className="text-2xl font-bold text-[#071d41]">
-                        {usuarioSelecionado.nome}
+
+                    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                      <h3 className="font-bold text-[#071d41] mb-4 text-sm uppercase tracking-wide">
+                        Produtividade da Equipe (Últimos 7 dias)
+                      </h3>
+                      <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={dadosGrafico}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis
+                              dataKey="name"
+                              axisLine={false}
+                              tickLine={false}
+                              dy={10}
+                            />
+                            <YAxis axisLine={false} tickLine={false} />
+                            <Tooltip cursor={{ fill: "transparent" }} />
+                            <Bar
+                              dataKey="horas"
+                              radius={[4, 4, 0, 0]}
+                              barSize={40}
+                              name="Horas Trabalhadas"
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                      <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row justify-between items-center bg-gray-50 gap-4">
+                        <h3 className="font-bold text-[#071d41] text-lg">
+                          Gerenciar Colaboradores
+                        </h3>
+                        <div className="flex gap-2 w-full md:w-auto">
+                          <div className="relative flex-1 md:flex-none">
+                            <Search
+                              className="absolute left-3 top-2.5 text-gray-400"
+                              size={16}
+                            />
+                            <input
+                              type="text"
+                              placeholder="Buscar nome ou email..."
+                              className="pl-9 pr-4 py-2 border rounded-full text-sm focus:outline-blue-500 w-full md:w-64 bg-white"
+                              value={termoBusca}
+                              onChange={(e) => setTermoBusca(e.target.value)}
+                            />
+                          </div>
+                          <button
+                            onClick={() => setModalNovoUsuario(true)}
+                            className="bg-[#1351b4] hover:bg-blue-800 text-white px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition shadow-sm"
+                          >
+                            <UserPlus size={16} />{" "}
+                            <span className="hidden md:inline">Adicionar</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-xs">
+                            <tr>
+                              <th className="p-4">Colaborador</th>
+                              <th className="p-4">Cargo</th>
+                              <th className="p-4 text-center">Acesso</th>
+                              <th className="p-4 text-center">Status Hoje</th>
+                              <th className="p-4 text-center">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {usuariosFiltrados.length === 0 && (
+                              <tr>
+                                <td
+                                  colSpan="5"
+                                  className="p-8 text-center text-gray-400 italic"
+                                >
+                                  Nenhum colaborador encontrado com esse termo.
+                                </td>
+                              </tr>
+                            )}
+                            {usuariosFiltrados.map((user) => {
+                              const statusHoje = getStatusUsuario(user.id);
+                              return (
+                                <tr
+                                  key={user.id}
+                                  className={`hover:bg-blue-50 transition ${
+                                    user.status === "inativo"
+                                      ? "opacity-60 bg-gray-50"
+                                      : ""
+                                  }`}
+                                >
+                                  <td className="p-4">
+                                    <div className="font-bold text-[#071d41] text-base">
+                                      {user.nome}
+                                    </div>
+                                    <div className="text-xs text-gray-400 flex flex-col">
+                                      {user.email ? (
+                                        <span>{user.email}</span>
+                                      ) : (
+                                        <span>Sem e-mail</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="p-4 text-gray-600 font-medium">
+                                    {user.cargo}
+                                  </td>
+                                  <td className="p-4 text-center">
+                                    <span
+                                      className={`px-2 py-1 rounded text-xs font-bold border ${
+                                        user.status === "ativo"
+                                          ? "bg-green-100 text-green-700 border-green-200"
+                                          : "bg-red-100 text-red-700 border-red-200"
+                                      }`}
+                                    >
+                                      {user.status.toUpperCase()}
+                                    </span>
+                                  </td>
+                                  <td className="p-4 text-center">
+                                    <BadgeStatus status={statusHoje} />
+                                  </td>
+                                  <td className="p-4 text-center">
+                                    <div className="flex items-center justify-center gap-2">
+                                      <button
+                                        onClick={() => setUsuarioSelecionado(user)}
+                                        className="bg-blue-100 text-[#1351b4] p-2 rounded hover:bg-blue-200 transition"
+                                        title="Ver Espelho de Ponto"
+                                      >
+                                        <Eye size={18} />
+                                      </button>
+                                      <button
+                                        onClick={() => abrirEdicao(user)}
+                                        className="bg-orange-100 text-orange-600 p-2 rounded hover:bg-orange-200 transition"
+                                        title="Editar Dados"
+                                      >
+                                        <Edit3 size={18} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleExcluirUsuario(user)}
+                                        className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200 transition"
+                                        title="Excluir Colaborador"
+                                      >
+                                        <Trash2 size={18} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ===================== RELATÓRIOS ===================== */}
+                {view === "relatorios" &&
+                  !usuarioSelecionado &&
+                  !relatorioDetalhado && (
+                    <div className="space-y-6 animate-fade-in">
+                      <div className="hidden print:block text-center mb-6">
+                        <h1 className="text-2xl font-bold">
+                          Relatório Geral de Ponto
+                        </h1>
+                        <p className="text-sm">
+                          Período:{" "}
+                          {
+                            [
+                              "Janeiro",
+                              "Fevereiro",
+                              "Março",
+                              "Abril",
+                              "Maio",
+                              "Junho",
+                              "Julho",
+                              "Agosto",
+                              "Setembro",
+                              "Outubro",
+                              "Novembro",
+                              "Dezembro",
+                            ][mesRelatorio]
+                          }{" "}
+                          / {anoRelatorio}
+                        </p>
+                      </div>
+
+                      <div className="bg-white p-6 rounded shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center print:border-none print:shadow-none print:p-0">
+                        <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg print:hidden">
+                          <FileText size={24} className="text-[#1351b4]" /> Relatório
+                          Mensal de Ponto
+                        </h3>
+
+                        <div className="flex gap-2 print:hidden">
+                          <select
+                            value={mesRelatorio}
+                            onChange={(e) =>
+                              setMesRelatorio(Number(e.target.value))
+                            }
+                            className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer"
+                          >
+                            {[
+                              "Janeiro",
+                              "Fevereiro",
+                              "Março",
+                              "Abril",
+                              "Maio",
+                              "Junho",
+                              "Julho",
+                              "Agosto",
+                              "Setembro",
+                              "Outubro",
+                              "Novembro",
+                              "Dezembro",
+                            ].map((m, i) => (
+                              <option key={i} value={i}>
+                                {m}
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={anoRelatorio}
+                            onChange={(e) =>
+                              setAnoRelatorio(Number(e.target.value))
+                            }
+                            className="border p-2 rounded text-sm bg-gray-50 outline-none focus:border-blue-500 cursor-pointer"
+                          >
+                            {Array.from({ length: 5 }, (_, i) => 2026 + i).map(
+                              (a) => (
+                                <option key={a} value={a}>
+                                  {a}
+                                </option>
+                              )
+                            )}
+                          </select>
+
+                          <button
+                            onClick={handleExportarExcel}
+                            className="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition shadow-sm"
+                          >
+                            <FileSpreadsheet size={16} /> Excel
+                          </button>
+
+                          <button
+                            onClick={() => window.print()}
+                            className="bg-red-600 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-red-700 transition shadow-sm"
+                          >
+                            <Printer size={16} /> PDF
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded shadow-sm border overflow-hidden print:border print:shadow-none">
+                        <table className="w-full text-left text-sm print:text-xs border-collapse">
+                          <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-xs print:bg-gray-200">
+                            <tr>
+                              <th className="p-3 border">Colaborador</th>
+                              <th className="p-3 border text-center">
+                                Horas Trabalhadas
+                              </th>
+                              <th className="p-3 border text-center">Saldo de Horas</th>
+                              <th className="p-3 border text-center">Dias de Folga</th>
+                              <th className="p-3 border text-center print:hidden">
+                                Ação
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dadosRelatorio.map((rel) => (
+                              <tr
+                                key={rel.id}
+                                className="hover:bg-gray-50 transition print:break-inside-avoid"
+                              >
+                                <td className="p-3 border font-bold text-[#071d41]">
+                                  {rel.nome}
+                                  <br />
+                                  <span className="text-[10px] text-gray-500 font-normal">
+                                    {rel.email}
+                                  </span>
+                                </td>
+                                <td className="p-3 border text-center font-mono text-gray-700 font-medium">
+                                  {rel.totalHoras}
+                                </td>
+                                <td className="p-3 border text-center font-bold">
+                                  <span
+                                    className={`px-2 py-1 rounded ${
+                                      rel.saldoMinutos >= 0
+                                        ? "bg-green-100 text-green-700"
+                                        : "bg-red-100 text-red-700"
+                                    }`}
+                                  >
+                                    {formatarSaldo(rel.saldoMinutos)}
+                                  </span>
+                                </td>
+                                <td className="p-3 border text-center">
+                                  {rel.diasFolga > 0 ? (
+                                    <span className="bg-blue-100 text-blue-700 px-2 rounded text-xs font-bold border border-blue-200 print:border-black">
+                                      {rel.diasFolga} Dias Folga
+                                    </span>
+                                  ) : rel.faltas.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1 justify-center">
+                                      {rel.faltas.slice(0, 5).map((f, i) => (
+                                        <span
+                                          key={i}
+                                          className="bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-200"
+                                        >
+                                          {f}
+                                        </span>
+                                      ))}
+                                      {rel.faltas.length > 5 && (
+                                        <span className="text-xs text-gray-500">
+                                          +{rel.faltas.length - 5}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-green-500 font-bold text-xs flex items-center justify-center gap-1">
+                                      <CheckCircle size={12} /> 100% Presente
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-3 border text-center print:hidden">
+                                  <button
+                                    onClick={() => setRelatorioDetalhado(rel)}
+                                    className="bg-[#1351b4] text-white px-3 py-1 rounded text-xs hover:bg-blue-800 flex items-center gap-1 mx-auto transition shadow-sm"
+                                  >
+                                    <FileText size={14} /> Abrir Folha
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                            {dadosRelatorio.length === 0 && (
+                              <tr>
+                                <td
+                                  colSpan="5"
+                                  className="p-10 text-center text-gray-400"
+                                >
+                                  Nenhum dado encontrado para o período selecionado.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="mt-4 p-4 bg-blue-50 rounded border border-blue-100 text-xs text-blue-800 flex items-start gap-2 print:hidden">
+                        <AlertCircle size={16} className="mt-0.5" />
+                        <p>
+                          <strong>Nota do Sistema:</strong> Dias marcados como Folga
+                          não descontam horas do saldo. Dias sem ponto e sem folga
+                          descontam 8 horas.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                {/* ===================== CONSUMOS ===================== */}
+                {view === "consumos" &&
+                  !usuarioSelecionado &&
+                  !relatorioDetalhado && (
+                    <div className="space-y-6 animate-fade-in print:hidden">
+                      <div className="bg-white p-6 rounded shadow-sm border border-gray-200">
+                        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                          <h3 className="font-bold text-[#071d41] flex items-center gap-2 text-lg">
+                            <ShoppingBag size={24} className="text-[#1351b4]" />{" "}
+                            Controle de Consumo (15 Dias)
+                          </h3>
+                          <div className="flex gap-2 w-full md:w-auto">
+                            <select
+                              className="border p-2 rounded text-sm w-full md:w-64"
+                              onChange={(e) =>
+                                setColaboradorConsumo(e.target.value)
+                              }
+                              value={colaboradorConsumo || ""}
+                            >
+                              <option value="">
+                                Selecione um Funcionário...
+                              </option>
+                              {usuarios.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.nome}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => {
+                                if (!colaboradorConsumo)
+                                  return toast.warning("Selecione um funcionário!");
+                                setConsumoEditando(null);
+                                setNovoConsumo({
+                                  nomeItem: "",
+                                  valor: "",
+                                  imagemUrl: "",
+                                });
+                                setModalNovoConsumo(true);
+                              }}
+                              className="bg-[#1351b4] text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-blue-800"
+                            >
+                              <PlusCircle size={16} /> Adicionar Item
+                            </button>
+                          </div>
+                        </div>
+
+                        {colaboradorConsumo ? (
+                          <>
+                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex justify-between items-center mb-6">
+                              <div>
+                                <p className="text-xs font-bold text-blue-500 uppercase">
+                                  Total a Pagar
+                                </p>
+                                <p className="text-2xl font-black text-[#071d41]">
+                                  {new Intl.NumberFormat("pt-BR", {
+                                    style: "currency",
+                                    currency: "BRL",
+                                  }).format(totalConsumo)}
+                                </p>
+                              </div>
+                              <p className="text-xs text-gray-400 max-w-xs text-right hidden md:block">
+                                Itens mais antigos que 15 dias são removidos
+                                automaticamente.
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {listaConsumos
+                                .filter(
+                                  (c) =>
+                                    Number(c.usuarioId) ===
+                                    Number(colaboradorConsumo)
+                                )
+                                .map((item) => (
+                                  <div
+                                    key={item.id}
+                                    className="bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition flex gap-4"
+                                  >
+                                    <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                                      {item.imagemUrl ? (
+                                        <img
+                                          src={item.imagemUrl}
+                                          alt="Item"
+                                          className="w-full h-full object-cover"
+                                        />
+                                      ) : (
+                                        <ImageIcon
+                                          size={24}
+                                          className="text-gray-300"
+                                        />
+                                      )}
+                                    </div>
+                                    <div className="flex-1">
+                                      <h4 className="font-bold text-gray-800">
+                                        {item.nomeItem}
+                                      </h4>
+                                      <p className="text-sm text-green-600 font-bold">
+                                        R${" "}
+                                        {Number(item.valor || 0)
+                                          .toFixed(2)
+                                          .replace(".", ",")}
+                                      </p>
+                                      <p className="text-[10px] text-gray-400 mt-1">
+                                        {new Date(item.data).toLocaleDateString(
+                                          "pt-BR"
+                                        )}
+                                      </p>
+                                    </div>
+                                    <div className="flex flex-col justify-between">
+                                      <button
+                                        onClick={() => abrirModalEdicaoConsumo(item)}
+                                        className="text-blue-400 hover:text-blue-600"
+                                      >
+                                        <Edit3 size={16} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleExcluirConsumo(item.id)}
+                                        className="text-red-400 hover:text-red-600"
+                                      >
+                                        <Trash2 size={16} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-center p-10 text-gray-400 bg-gray-50 rounded border-2 border-dashed">
+                            Selecione um funcionário acima.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                {/* ===================== ASSINATURA (NOVO) ===================== */}
+                {view === "assinatura" && (
+                  <div className="space-y-6 animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                        <CreditCard className="text-[#1351b4]" /> Gestão da Assinatura
                       </h2>
-                      <div className="text-gray-500 text-sm flex gap-2">
-                        <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">
-                          {usuarioSelecionado.cargo}
+
+                      <button
+                        onClick={() => atualizarEmpresa(empresaId)}
+                        className="text-sm font-bold px-4 py-2 rounded border bg-white hover:bg-gray-50"
+                      >
+                        Atualizar Status
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <h3 className="text-sm font-bold text-gray-500 uppercase mb-4">
+                          Status da Conta
+                        </h3>
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`p-2 rounded-full ${
+                              empresa?.ativo
+                                ? "bg-green-100 text-green-700"
+                                : "bg-red-100 text-red-700"
+                            }`}
+                          >
+                            {empresa?.ativo ? (
+                              <CheckCircle size={24} />
+                            ) : (
+                              <AlertTriangle size={24} />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold">
+                              {empresa?.ativo ? "Ativa" : "Bloqueada"}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {empresa?.ativo
+                                ? "Acesso total liberado"
+                                : "Pagamento pendente"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <h3 className="text-sm font-bold text-gray-500 uppercase mb-4">
+                          Próximo Vencimento
+                        </h3>
+                        <p className="text-3xl font-bold text-[#1351b4]">
+                          {empresa?.pagoAte
+                            ? new Date(empresa.pagoAte).toLocaleDateString("pt-BR")
+                            : "--/--/----"}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Mantenha em dia para evitar bloqueios.
+                        </p>
+                      </div>
+
+                      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <h3 className="text-sm font-bold text-gray-500 uppercase mb-4">
+                          Plano Atual
+                        </h3>
+                        <p className="text-2xl font-bold text-gray-800 capitalize">
+                          {empresa?.plano || "Mensal"}
+                        </p>
+                        <p className="text-sm text-gray-500">R$ 160,00 / mês</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
+                      <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-4">
+                        Renovar Agora
+                      </h3>
+
+                      <div className="flex flex-col md:flex-row gap-8 items-start">
+                        <div className="flex-1 w-full">
+                          <p className="text-gray-600 mb-6 text-sm">
+                            Selecione o período para renovação via Pix (Liberação
+                            Imediata):
+                          </p>
+
+                          <div className="flex gap-4 mb-6">
+                            <button
+                              onClick={() => gerarPagamento("MENSAL")}
+                              disabled={loadingPix}
+                              className="flex-1 border-2 border-[#1351b4] bg-blue-50 text-[#1351b4] py-4 rounded-lg font-bold hover:bg-[#1351b4] hover:text-white transition disabled:opacity-60"
+                            >
+                              Mensal{" "}
+                              <span className="block text-xs font-normal">
+                                R$ 160,00
+                              </span>
+                            </button>
+
+                            <button
+                              onClick={() => gerarPagamento("ANUAL")}
+                              disabled={loadingPix}
+                              className="flex-1 border border-gray-200 text-gray-600 py-4 rounded-lg font-bold hover:border-green-500 hover:text-green-600 transition disabled:opacity-60"
+                            >
+                              Anual{" "}
+                              <span className="block text-xs font-normal">
+                                R$ 1.600,00
+                              </span>
+                            </button>
+                          </div>
+
+                          {loadingPix && (
+                            <div className="text-center text-blue-600 flex justify-center gap-2">
+                              <Loader2 className="animate-spin" /> Gerando Pix...
+                            </div>
+                          )}
+                        </div>
+
+                        {pixData && (
+                          <div className="flex-1 bg-gray-50 p-4 rounded-lg border border-gray-200 text-center w-full animate-scale-in">
+                            <p className="text-sm font-bold text-green-700 mb-2 flex justify-center gap-1">
+                              <CheckCircle size={16} /> Pix Gerado!
+                            </p>
+
+                            <img
+                              src={`data:image/png;base64,${pixData.qrCodeImage}`}
+                              alt="QR Pix"
+                              className="w-40 h-40 mx-auto border-4 border-white shadow-sm mb-4"
+                            />
+
+                            <div className="relative">
+                              <input
+                                readOnly
+                                value={pixData.pixCopiaCola}
+                                className="w-full text-[10px] font-mono bg-white border p-2 pr-8 rounded text-gray-500"
+                              />
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(
+                                    pixData.pixCopiaCola
+                                  );
+                                  toast.success("Copiado!");
+                                }}
+                                className="absolute right-1 top-1 p-1 hover:text-blue-600 text-gray-400"
+                                title="Copiar"
+                              >
+                                <Copy size={14} />
+                              </button>
+                            </div>
+
+                            <p className="text-[11px] text-gray-400 mt-3">
+                              Depois do pagamento, clique em <b>Atualizar Status</b>.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ===================== FOLHA DETALHADA ===================== */}
+                {relatorioDetalhado && (
+                  <div className="bg-white p-8 max-w-4xl mx-auto shadow-lg print:shadow-none print:w-full animate-fade-in">
+                    <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-6">
+                      <div>
+                        <h1 className="text-2xl font-black text-gray-900 uppercase tracking-wide">
+                          Pinguim Manoa
+                        </h1>
+                        <p className="text-sm text-gray-500 font-bold">
+                          Folha de Ponto Individual
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-gray-900">
+                          Período:{" "}
+                          {
+                            [
+                              "Janeiro",
+                              "Fevereiro",
+                              "Março",
+                              "Abril",
+                              "Maio",
+                              "Junho",
+                              "Julho",
+                              "Agosto",
+                              "Setembro",
+                              "Outubro",
+                              "Novembro",
+                              "Dezembro",
+                            ][mesRelatorio]
+                          }{" "}
+                          / {anoRelatorio}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Gerado em: {new Date().toLocaleString("pt-BR")}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mb-6 bg-gray-50 p-4 rounded border border-gray-200 print:bg-transparent print:border-gray-300">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-bold text-gray-600">
+                            Colaborador:
+                          </span>{" "}
+                          <span className="text-gray-900 uppercase ml-2">
+                            {relatorioDetalhado.nome}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-gray-600">Cargo:</span>{" "}
+                          <span className="text-gray-900 uppercase ml-2">
+                            {relatorioDetalhado.cargo || "Não informado"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-gray-600">Email:</span>{" "}
+                          <span className="text-gray-900 ml-2">
+                            {relatorioDetalhado.email}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-bold text-gray-600">Saldo do Mês:</span>{" "}
+                          <span
+                            className={`font-bold ml-2 ${
+                              relatorioDetalhado.saldoMinutos >= 0
+                                ? "text-green-700"
+                                : "text-red-700"
+                            }`}
+                          >
+                            {formatarSaldo(relatorioDetalhado.saldoMinutos)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <table className="w-full text-xs md:text-sm border-collapse border border-gray-300 mb-8">
+                      <thead className="bg-gray-100 print:bg-gray-200 text-gray-800 font-bold uppercase">
+                        <tr>
+                          <th className="border border-gray-300 p-2 text-left">Data</th>
+                          <th className="border border-gray-300 p-2 text-center">
+                            Entrada
+                          </th>
+                          <th className="border border-gray-300 p-2 text-center">Saída</th>
+                          <th className="border border-gray-300 p-2 text-center">
+                            H. Trab
+                          </th>
+                          <th className="border border-gray-300 p-2 text-center">Saldo</th>
+                          <th className="border border-gray-300 p-2 text-center">
+                            Situação
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {gerarDiasDoMesParaRelatorio(
+                          mesRelatorio,
+                          anoRelatorio,
+                          pontosGerais.filter(
+                            (p) => p.usuarioId === relatorioDetalhado.id
+                          ),
+                          folgasGerais.filter(
+                            (f) => f.usuarioId === relatorioDetalhado.id
+                          )
+                        ).map((dia, idx) => (
+                          <tr key={idx} className="print:break-inside-avoid">
+                            <td className="border border-black p-1">
+                              {dia.dataFormatada}
+                            </td>
+                            <td className="border border-black p-1 text-center">
+                              {dia.entrada}
+                            </td>
+                            <td className="border border-black p-1 text-center">
+                              {dia.saida}
+                            </td>
+                            <td className="border border-black p-1 text-center font-mono">
+                              {dia.horasTrabalhadas}
+                            </td>
+                            <td className="border border-black p-1 text-center font-bold">
+                              {dia.saldo}
+                            </td>
+                            <td className="border border-black p-1 text-center">
+                              {dia.status}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    <div className="mt-8 flex flex-col md:flex-row justify-center gap-4 print:hidden">
+                      <button
+                        onClick={() => setRelatorioDetalhado(null)}
+                        className="px-6 py-2 border border-gray-300 rounded text-gray-600 hover:bg-gray-100 flex items-center justify-center gap-2 transition"
+                      >
+                        <ArrowLeft size={18} /> Voltar
+                      </button>
+
+                      <button
+                        onClick={() => handleEnviarEmailRelatorio(relatorioDetalhado)}
+                        className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg transition"
+                      >
+                        <Mail size={18} /> Enviar por E-mail
+                      </button>
+
+                      <button
+                        onClick={() => window.print()}
+                        className="px-6 py-2 bg-green-600 text-white rounded font-bold hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg transition"
+                      >
+                        <Printer size={18} /> Imprimir Folha
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ===================== HISTÓRICO DO USUÁRIO ===================== */}
+                {usuarioSelecionado && (
+                  <div className="animate-fade-in space-y-6 print:hidden">
+                    <div className="flex justify-between items-center">
+                      <button
+                        onClick={() => setUsuarioSelecionado(null)}
+                        className="text-sm text-gray-500 hover:text-[#1351b4] flex items-center gap-1 font-bold transition"
+                      >
+                        <ChevronDown size={16} className="rotate-90" /> Voltar para
+                        Lista
+                      </button>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => toggleStatusUsuario(usuarioSelecionado)}
+                          className={`px-4 py-2 rounded text-sm font-bold flex items-center gap-2 transition shadow-sm ${
+                            usuarioSelecionado.status === "ativo"
+                              ? "bg-red-100 text-red-700 hover:bg-red-200 border border-red-200"
+                              : "bg-green-100 text-green-700 hover:bg-green-200 border border-green-200"
+                          }`}
+                        >
+                          {usuarioSelecionado.status === "ativo" ? (
+                            <>
+                              <Lock size={16} /> Bloquear Acesso
+                            </>
+                          ) : (
+                            <>
+                              <Unlock size={16} /> Desbloquear Acesso
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-2xl font-bold">
+                          {usuarioSelecionado.nome.charAt(0)}
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold text-[#071d41]">
+                            {usuarioSelecionado.nome}
+                          </h2>
+                          <div className="text-gray-500 text-sm flex gap-2">
+                            <span className="bg-blue-50 text-blue-800 px-2 rounded font-bold">
+                              {usuarioSelecionado.cargo}
+                            </span>
+                          </div>
+                          <p className="text-gray-400 text-xs mt-1">
+                            {usuarioSelecionado.email || "Sem e-mail cadastrado"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right bg-gray-50 p-3 rounded border border-gray-100">
+                        <div className="flex gap-2 mb-2 justify-end">
+                          <select
+                            value={mesFicha}
+                            onChange={(e) => setMesFicha(Number(e.target.value))}
+                            className="border p-1 rounded text-xs outline-none bg-white"
+                          >
+                            {[
+                              "Janeiro",
+                              "Fevereiro",
+                              "Março",
+                              "Abril",
+                              "Maio",
+                              "Junho",
+                              "Julho",
+                              "Agosto",
+                              "Setembro",
+                              "Outubro",
+                              "Novembro",
+                              "Dezembro",
+                            ].map((m, i) => (
+                              <option key={i} value={i}>
+                                {m}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={anoFicha}
+                            onChange={(e) => setAnoFicha(Number(e.target.value))}
+                            className="border p-1 rounded text-xs outline-none bg-white"
+                          >
+                            {Array.from({ length: 5 }, (_, i) => 2026 + i).map(
+                              (a) => (
+                                <option key={a} value={a}>
+                                  {a}
+                                </option>
+                              )
+                            )}
+                          </select>
+                        </div>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                          Visualizando Espelho
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded shadow-sm border border-gray-200">
+                      <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                        <span className="font-bold text-[#071d41] flex items-center gap-2">
+                          <Calendar size={18} /> Histórico Detalhado
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          Clique para editar ou marcar folga
                         </span>
                       </div>
-                      <p className="text-gray-400 text-xs mt-1">
-                        {usuarioSelecionado.email || "Sem e-mail cadastrado"}
-                      </p>
+
+                      <div className="divide-y divide-gray-100">
+                        {gerarDiasDoMesSelecionado(
+                          mesFicha,
+                          anoFicha,
+                          pontosGerais.filter(
+                            (p) => p.usuarioId === usuarioSelecionado.id
+                          )
+                        ).map((dia, idx) => (
+                          <ItemDiaAdmin
+                            key={idx}
+                            dia={dia}
+                            pontosReais={pontosGerais.filter(
+                              (p) =>
+                                p.usuarioId === usuarioSelecionado.id &&
+                                new Date(p.data).toLocaleDateString("pt-BR") ===
+                                  dia.dataFormatada
+                            )}
+                            mensagem={getMensagemDia(dia.dataIso)}
+                            usuarioId={usuarioSelecionado.id}
+                            isFolga={folgasGerais.some(
+                              (f) =>
+                                Number(f.usuarioId) ===
+                                  Number(usuarioSelecionado.id) &&
+                                f.dataIso === dia.dataIso
+                            )}
+                            onUpdate={carregarDados}
+                          />
+                        ))}
+                      </div>
                     </div>
                   </div>
-
-                  <div className="text-right bg-gray-50 p-3 rounded border border-gray-100">
-                    <div className="flex gap-2 mb-2 justify-end">
-                      <select
-                        value={mesFicha}
-                        onChange={(e) => setMesFicha(Number(e.target.value))}
-                        className="border p-1 rounded text-xs outline-none bg-white"
-                      >
-                        {[
-                          "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-                          "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
-                        ].map((m, i) => (
-                          <option key={i} value={i}>{m}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={anoFicha}
-                        onChange={(e) => setAnoFicha(Number(e.target.value))}
-                        className="border p-1 rounded text-xs outline-none bg-white"
-                      >
-                        {Array.from({ length: 5 }, (_, i) => 2026 + i).map((a) => (
-                          <option key={a} value={a}>{a}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                      Visualizando Espelho
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded shadow-sm border border-gray-200">
-                  <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                    <span className="font-bold text-[#071d41] flex items-center gap-2">
-                      <Calendar size={18} /> Histórico Detalhado
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      Clique para editar ou marcar folga
-                    </span>
-                  </div>
-
-                  <div className="divide-y divide-gray-100">
-                    {gerarDiasDoMesSelecionado(
-                      mesFicha,
-                      anoFicha,
-                      pontosGerais.filter((p) => p.usuarioId === usuarioSelecionado.id)
-                    ).map((dia, idx) => (
-                      <ItemDiaAdmin
-                        key={idx}
-                        dia={dia}
-                        pontosReais={pontosGerais.filter(
-                          (p) =>
-                            p.usuarioId === usuarioSelecionado.id &&
-                            new Date(p.data).toLocaleDateString("pt-BR") ===
-                              dia.dataFormatada
-                        )}
-                        mensagem={getMensagemDia(dia.dataIso)}
-                        usuarioId={usuarioSelecionado.id}
-                        isFolga={folgasGerais.some(
-                          (f) =>
-                            Number(f.usuarioId) === Number(usuarioSelecionado.id) &&
-                            f.dataIso === dia.dataIso
-                        )}
-                        onUpdate={carregarDados}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
+                )}
+              </>
             )}
           </>
         )}
@@ -1855,7 +2034,10 @@ export default function AdminPage() {
                   className="w-full border p-2.5 rounded outline-none focus:border-blue-500"
                   value={adminParaEditar.nome || ""}
                   onChange={(e) =>
-                    setAdminParaEditar({ ...adminParaEditar, nome: e.target.value })
+                    setAdminParaEditar({
+                      ...adminParaEditar,
+                      nome: e.target.value,
+                    })
                   }
                 />
               </div>
@@ -1868,7 +2050,10 @@ export default function AdminPage() {
                   className="w-full border p-2.5 rounded outline-none focus:border-blue-500"
                   value={adminParaEditar.email || ""}
                   onChange={(e) =>
-                    setAdminParaEditar({ ...adminParaEditar, email: e.target.value })
+                    setAdminParaEditar({
+                      ...adminParaEditar,
+                      email: e.target.value,
+                    })
                   }
                 />
               </div>
@@ -1881,7 +2066,10 @@ export default function AdminPage() {
                   className="w-full border p-2.5 rounded outline-none focus:border-blue-500"
                   value={adminParaEditar.cargo || ""}
                   onChange={(e) =>
-                    setAdminParaEditar({ ...adminParaEditar, cargo: e.target.value })
+                    setAdminParaEditar({
+                      ...adminParaEditar,
+                      cargo: e.target.value,
+                    })
                   }
                 />
               </div>
@@ -1921,7 +2109,9 @@ export default function AdminPage() {
                   placeholder="Ex: João Silva"
                   className="w-full border p-2.5 rounded outline-none"
                   value={novoUser.nome}
-                  onChange={(e) => setNovoUser({ ...novoUser, nome: e.target.value })}
+                  onChange={(e) =>
+                    setNovoUser({ ...novoUser, nome: e.target.value })
+                  }
                 />
               </div>
 
@@ -1933,7 +2123,9 @@ export default function AdminPage() {
                   placeholder="email@exemplo.com"
                   className="w-full border p-2.5 rounded outline-none"
                   value={novoUser.email}
-                  onChange={(e) => setNovoUser({ ...novoUser, email: e.target.value })}
+                  onChange={(e) =>
+                    setNovoUser({ ...novoUser, email: e.target.value })
+                  }
                 />
               </div>
 
@@ -1945,7 +2137,9 @@ export default function AdminPage() {
                   placeholder="Ex: Vendedor"
                   className="w-full border p-2.5 rounded outline-none"
                   value={novoUser.cargo}
-                  onChange={(e) => setNovoUser({ ...novoUser, cargo: e.target.value })}
+                  onChange={(e) =>
+                    setNovoUser({ ...novoUser, cargo: e.target.value })
+                  }
                 />
               </div>
 
@@ -1992,7 +2186,10 @@ export default function AdminPage() {
                   className="w-full border p-2.5 rounded outline-none"
                   value={usuarioParaEditar.nome || ""}
                   onChange={(e) =>
-                    setUsuarioParaEditar({ ...usuarioParaEditar, nome: e.target.value })
+                    setUsuarioParaEditar({
+                      ...usuarioParaEditar,
+                      nome: e.target.value,
+                    })
                   }
                 />
               </div>
@@ -2005,7 +2202,10 @@ export default function AdminPage() {
                   className="w-full border p-2.5 rounded outline-none"
                   value={usuarioParaEditar.email || ""}
                   onChange={(e) =>
-                    setUsuarioParaEditar({ ...usuarioParaEditar, email: e.target.value })
+                    setUsuarioParaEditar({
+                      ...usuarioParaEditar,
+                      email: e.target.value,
+                    })
                   }
                 />
               </div>
@@ -2018,7 +2218,10 @@ export default function AdminPage() {
                   className="w-full border p-2.5 rounded outline-none"
                   value={usuarioParaEditar.cargo || ""}
                   onChange={(e) =>
-                    setUsuarioParaEditar({ ...usuarioParaEditar, cargo: e.target.value })
+                    setUsuarioParaEditar({
+                      ...usuarioParaEditar,
+                      cargo: e.target.value,
+                    })
                   }
                 />
               </div>
@@ -2052,7 +2255,10 @@ export default function AdminPage() {
               />
 
               <div className="relative">
-                <DollarSign size={16} className="absolute left-2 top-3 text-gray-400" />
+                <DollarSign
+                  size={16}
+                  className="absolute left-2 top-3 text-gray-400"
+                />
                 <input
                   type="number"
                   step="0.01"
@@ -2584,9 +2790,13 @@ function BotaoMenu({ icon, text, active, onClick }) {
 
 function CardResumo({ titulo, valor, icon, cor }) {
   return (
-    <div className={`bg-white p-6 rounded shadow-sm border border-gray-200 flex items-center justify-between ${cor}`}>
+    <div
+      className={`bg-white p-6 rounded shadow-sm border border-gray-200 flex items-center justify-between ${cor}`}
+    >
       <div>
-        <p className="text-gray-500 text-xs font-bold uppercase mb-1 tracking-wide">{titulo}</p>
+        <p className="text-gray-500 text-xs font-bold uppercase mb-1 tracking-wide">
+          {titulo}
+        </p>
         <p className="text-3xl font-bold text-[#071d41]">{valor}</p>
       </div>
       <div className="bg-gray-50 p-3 rounded-full border border-gray-100">{icon}</div>
