@@ -12,8 +12,17 @@ import { toast } from "sonner";
 export default function Page() {
   const router = useRouter();
 
-  // ✅ Coloque seu e-mail real aqui (fallback caso role não venha certo)
-  const SUPER_ADMIN_EMAIL = "henriquepaiva128@gmail.com";
+  // ==========================================================
+  // ✅ PERMISSÕES / ROTAS (SUPER ADMIN x ADMIN)
+  // ==========================================================
+  // (Opcional) fallback por e-mail caso você ainda não tenha "role" no banco
+  const SUPER_ADMIN_EMAIL = "henriquepaiva128@gail.com"; // <-- TROQUE AQUI
+
+  const isSuperAdmin = (u) =>
+    u?.role === "SUPER_ADMIN" || u?.tipo === "super_admin" || u?.email === SUPER_ADMIN_EMAIL;
+
+  const isAdmin = (u) =>
+    u?.role === "ADMIN" || u?.tipo === "admin";
 
   // ==========================================================
   // 1. ESTADOS DE AUTENTICAÇÃO E USUÁRIO
@@ -174,6 +183,7 @@ export default function Page() {
         const dataConsumo = await resConsumo.json();
         setMeusConsumos(Array.isArray(dataConsumo) ? dataConsumo : []);
       }
+
     } catch (error) {
       console.error("Erro ao buscar dados do usuário", error);
       toast.error("Erro ao sincronizar dados.");
@@ -210,15 +220,14 @@ export default function Page() {
           // Salva sessão atual
           localStorage.setItem("point_user", JSON.stringify(data.user));
 
-          // ✅ SUPER ADMIN -> /super-admin
-          if (data.user.role === "SUPER_ADMIN" || data.user.email === SUPER_ADMIN_EMAIL) {
+          // ✅ Redirecionamento correto por permissão
+          if (isSuperAdmin(data.user)) {
             atualizarUltimoUso(data.user.email, listaAtualizada);
             router.push("/super-admin");
             return;
           }
 
-          // ✅ ADMIN -> /admin
-          if (data.user.role === "ADMIN" || data.user.tipo === "admin") {
+          if (isAdmin(data.user)) {
             atualizarUltimoUso(data.user.email, listaAtualizada);
             router.push("/admin");
             return;
@@ -361,15 +370,14 @@ export default function Page() {
         const novaLista = salvarContaNoDispositivo(data.user, contasSalvas);
         localStorage.setItem("point_user", JSON.stringify(data.user));
 
-        // ✅ SUPER ADMIN -> /super-admin
-        if (data.user.role === "SUPER_ADMIN" || data.user.email === SUPER_ADMIN_EMAIL) {
+        // ✅ Redirecionamento correto por permissão
+        if (isSuperAdmin(data.user)) {
           atualizarUltimoUso(data.user.email, novaLista);
           router.push("/super-admin");
           return;
         }
 
-        // ✅ ADMIN -> /admin
-        if (data.user.role === "ADMIN" || data.user.tipo === "admin") {
+        if (isAdmin(data.user)) {
           atualizarUltimoUso(data.user.email, novaLista);
           router.push("/admin");
           return;
@@ -722,59 +730,47 @@ export default function Page() {
                       if (!t) return true;
                       return (c.nome || "").toLowerCase().includes(t) || (c.email || "").toLowerCase().includes(t);
                     })
-                    .map((conta, idx) => {
-                      const isSuper = (conta.role === "SUPER_ADMIN" || conta.email === SUPER_ADMIN_EMAIL);
-                      const isAdmin = (conta.role === "ADMIN" || conta.tipo === "admin");
-
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => selecionarContaSalva(conta)}
-                          className={`flex items-center justify-between p-3 border rounded cursor-pointer transition group shadow-sm hover:shadow-md hover:border-blue-300 relative ${
-                            temaEscuro ? "bg-[#1f1f1f] border-gray-700 hover:bg-[#2a2a2a]" : "bg-white border-gray-200 hover:bg-gray-50"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-                              isSuper ? "bg-purple-700 text-white"
-                              : isAdmin ? "bg-[#071d41] text-white"
-                              : temaEscuro ? "bg-white/10 text-gray-100" : "bg-blue-100 text-blue-700"
-                            }`}>
-                              {getIniciais(conta.nome)}
-                            </div>
-
-                            <div className="text-left">
-                              <div className="flex items-center gap-2">
-                                <p className={`font-bold leading-tight text-sm ${temaEscuro ? "text-gray-100" : "text-gray-800"}`}>
-                                  {conta.nome}
-                                </p>
-
-                                {isSuper ? (
-                                  <span className="bg-purple-100 text-purple-800 text-[10px] px-1.5 py-0.5 rounded border border-purple-200 font-bold">
-                                    SUPER
-                                  </span>
-                                ) : isAdmin ? (
-                                  <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-bold">
-                                    ADMIN
-                                  </span>
-                                ) : null}
-                              </div>
-                              <p className={`text-xs ${temaEscuro ? "text-gray-400" : "text-gray-500"}`}>{conta.email}</p>
-                            </div>
+                    .map((conta, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => selecionarContaSalva(conta)}
+                        className={`flex items-center justify-between p-3 border rounded cursor-pointer transition group shadow-sm hover:shadow-md hover:border-blue-300 relative ${
+                          temaEscuro ? "bg-[#1f1f1f] border-gray-700 hover:bg-[#2a2a2a]" : "bg-white border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
+                            conta.role === "ADMIN" || conta.tipo === "admin" ? "bg-[#071d41] text-white" : temaEscuro ? "bg-white/10 text-gray-100" : "bg-blue-100 text-blue-700"
+                          }`}>
+                            {getIniciais(conta.nome)}
                           </div>
 
-                          <button
-                            onClick={(e) => removerContaSalva(e, conta)}
-                            className={`p-2 rounded-full transition ${
-                              temaEscuro ? "text-gray-500 hover:text-red-300 hover:bg-red-500/10" : "text-gray-300 hover:text-red-500 hover:bg-red-50"
-                            }`}
-                            title="Remover desta lista"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <div className="text-left">
+                            <div className="flex items-center gap-2">
+                              <p className={`font-bold leading-tight text-sm ${temaEscuro ? "text-gray-100" : "text-gray-800"}`}>
+                                {conta.nome}
+                              </p>
+                              {(conta.role === "ADMIN" || conta.tipo === "admin") && (
+                                <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-bold">
+                                  ADMIN
+                                </span>
+                              )}
+                            </div>
+                            <p className={`text-xs ${temaEscuro ? "text-gray-400" : "text-gray-500"}`}>{conta.email}</p>
+                          </div>
                         </div>
-                      );
-                    })}
+
+                        <button
+                          onClick={(e) => removerContaSalva(e, conta)}
+                          className={`p-2 rounded-full transition ${
+                            temaEscuro ? "text-gray-500 hover:text-red-300 hover:bg-red-500/10" : "text-gray-300 hover:text-red-500 hover:bg-red-50"
+                          }`}
+                          title="Remover desta lista"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
                 </div>
 
                 <div
