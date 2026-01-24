@@ -57,14 +57,12 @@ export default function Page() {
   // ==========================================================
   // ✅ PERMISSÕES / ROTAS (SUPER ADMIN x ADMIN)
   // ==========================================================
-  const SUPER_ADMIN_EMAIL = "henriquepaiva128@gmail.com"; // <-- TROQUE AQUI
+const SUPER_ADMIN_EMAIL = "henriquepaiva128@gmail.com";
 
-  const isSuperAdmin = (u) =>
-    u?.role === "SUPER_ADMIN" ||
-    u?.tipo === "super_admin" ||
-    u?.email === SUPER_ADMIN_EMAIL;
+const isSuperAdmin = (u) =>
+  (u?.email || "").toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase(); // só esse email
 
-  const isAdmin = (u) => u?.role === "ADMIN" || u?.tipo === "admin";
+const isAdmin = (u) => u?.role === "ADMIN"; // (opcional) pode deixar assim
 
   // ==========================================================
   // 1. ESTADOS DE AUTENTICAÇÃO E USUÁRIO
