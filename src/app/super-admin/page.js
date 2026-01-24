@@ -58,7 +58,7 @@ export default function SuperAdminDashboard() {
 
   async function handleCriarEmpresa(e) {
     e.preventDefault();
-    const toastId = toast.loading("Criando empresa...");
+    const toastId = toast.loading("Criando empresa e acessos...");
     try {
       const res = await fetch("/api/super-admin/empresas/criar", {
         method: "POST",
@@ -120,9 +120,15 @@ export default function SuperAdminDashboard() {
     }
   }
 
-  function handleLogout() {
-    document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT";
-    router.push("/");
+  // LOGOUT CORRIGIDO: Limpa cookies e força reload para a Home
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT; samesite=lax";
+      window.location.href = "/"; // Força o redirecionamento limpando o estado do Next.js
+    } catch (error) {
+      window.location.href = "/";
+    }
   }
 
   const empresasFiltradas = empresas.filter(e => 
@@ -197,6 +203,7 @@ export default function SuperAdminDashboard() {
           </div>
         </div>
 
+        {/* LISTA DE CARDS */}
         <div className="grid grid-cols-1 gap-4">
           {empresasFiltradas.map((emp) => {
             const diasRestantes = emp.pagoAte ? Math.ceil((new Date(emp.pagoAte) - new Date()) / 86400000) : 0;
@@ -228,7 +235,7 @@ export default function SuperAdminDashboard() {
                   <button 
                     onClick={() => toggleStatus(emp)}
                     className={`w-10 h-10 rounded flex items-center justify-center transition ${emp.ativo ? "text-red-500 hover:bg-red-50" : "text-green-600 hover:bg-green-50"}`}
-                    title={emp.ativo ? "Bloquear Empresa" : "Desbloquear Empresa"}
+                    title={emp.ativo ? "Bloquear" : "Liberar"}
                   >
                     {emp.ativo ? <Lock size={20} /> : <Unlock size={20} />}
                   </button>
@@ -285,8 +292,8 @@ export default function SuperAdminDashboard() {
 
       {/* MODAL: RENOVAR */}
       {modalRenovar && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-xs p-6">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-lg w-full max-w-xs p-6 shadow-2xl">
             <h3 className="text-lg font-bold text-blue-600 mb-4">Adicionar Tempo</h3>
             <p className="text-xs text-gray-500 mb-4">Empresa: <b>{modalRenovar.nome}</b></p>
             <div className="grid grid-cols-3 gap-2 mb-6">
