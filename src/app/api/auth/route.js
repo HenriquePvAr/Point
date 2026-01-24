@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
-import bcrypt from "bcryptjs"; // Importante para ler as senhas criptografadas
+import bcrypt from "bcryptjs";
 
 const JWT_SECRET = process.env.JWT_SECRET || "PINGUIM_POINT_SECRET_KEY_2026";
-// Defina seu email de Super Admin aqui ou no .env
-const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || "seuemail@exemplo.com").toLowerCase();
+
+// ATENÇÃO: Ajustei o email padrão para o seu email pessoal para evitar bloqueio
+const SUPER_ADMIN_EMAIL = (process.env.SUPER_ADMIN_EMAIL || "henriquepaiva128@gmail.com").toLowerCase();
 
 const SECRET_KEY = new TextEncoder().encode(JWT_SECRET);
 
@@ -39,8 +40,23 @@ export async function POST(request) {
         );
     }
 
-    // ✅ VERIFICAÇÃO DE SENHA COM CRIPTOGRAFIA (BCRYPT)
-    const senhaValida = await bcrypt.compare(senha, user.senha);
+    // ==========================================================
+    // ✅ VERIFICAÇÃO HÍBRIDA (Criptografia OU Texto Puro)
+    // ==========================================================
+    let senhaValida = false;
+
+    // 1. Tenta verificar se é um hash bcrypt válido
+    try {
+      senhaValida = await bcrypt.compare(senha, user.senha);
+    } catch (e) {
+      // Se der erro (ex: senha no banco não é hash), considera inválido por enquanto
+      senhaValida = false;
+    }
+
+    // 2. Se o bcrypt falhou, verifica se é texto puro (igualzinho ao banco)
+    if (!senhaValida && user.senha === senha) {
+      senhaValida = true;
+    }
     
     if (!senhaValida) {
       return NextResponse.json(
@@ -57,7 +73,7 @@ export async function POST(request) {
     // Se alguém no banco tiver SUPER_ADMIN mas não for o email oficial → BLOQUEIA
     if (user.role === "SUPER_ADMIN" && !isSuperEmail) {
       return NextResponse.json(
-        { success: false, message: "Acesso negado. Perfil não autorizado." },
+        { success: false, message: `Acesso negado. Este perfil requer o email mestre (${SUPER_ADMIN_EMAIL}).` },
         { status: 403 }
       );
     }
@@ -113,7 +129,7 @@ export async function POST(request) {
     const token = await new SignJWT({
       sub: userFinal.id.toString(),
       email: userFinal.email,
-      role: userFinal.role, // Aqui vai dizer se é ADMIN ou SUPER_ADMIN
+      role: userFinal.role,
       empresaId: userFinal.empresaId,
       nome: userFinal.nome,
     })
@@ -184,16 +200,12 @@ export async function GET() {
 
     // Revalida SaaS apenas se NÃO for Super Admin
     if (userFinal.role !== "SUPER_ADMIN") {
-       // Se empresa bloqueada
        if (userFinal.empresa && !userFinal.empresa.ativo) {
          return NextResponse.json({ success: false }, { status: 403 });
        }
-       // Se usuário inativo
        if (userFinal.status !== "ativo") {
          return NextResponse.json({ success: false }, { status: 403 });
        }
-       // Nota: Não bloqueamos sessão ativa por "pagoAte" aqui para não expulsar
-       // o usuário no meio do uso, mas pode descomentar se quiser rigor total.
     }
 
     const { senha: _, ...userSemSenha } = userFinal;
