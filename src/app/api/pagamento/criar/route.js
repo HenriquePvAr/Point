@@ -27,11 +27,31 @@ export async function POST(req) {
     // 3. Define valor (R$ 160,00 ou R$ 1600,00)
     const valor = plano === 'ANUAL' ? 1600 : 160;
 
-    // 4. Gera o Pix
-    console.log("Gerando Pix...");
+    // 4. Gera o Pix no Asaas
+    console.log("Gerando Pix no Asaas...");
     const dadosPix = await criarCobrancaPix(asaasId, valor);
 
-    return NextResponse.json({ success: true, ...dadosPix });
+    // ==========================================================
+    // ✅ PASSO ESSENCIAL QUE FALTA: SALVAR NO SEU BANCO DE DADOS
+    // ==========================================================
+    // Sem isso, o Webhook não consegue liberar o acesso depois!
+    await prisma.pagamento.create({
+      data: {
+        empresaId: empresa.id,
+        valor: valor,
+        metodo: "PIX",
+        status: "PENDING",
+        asaasId: dadosPix.id, // ID da cobrança que vem do Asaas
+      }
+    });
+
+    return NextResponse.json({ 
+      success: true, 
+      id: dadosPix.id,
+      invoiceUrl: dadosPix.invoiceUrl, // Link da fatura
+      pixCopiaCola: dadosPix.pixCopiaCola, // Código copia e cola
+      pixQrCode: dadosPix.pixQrCode // Base64 do QR Code
+    });
 
   } catch (error) {
     console.error("Erro ao gerar pagamento:", error);
