@@ -1,52 +1,35 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
 
-const SECRET_KEY = new TextEncoder().encode("PINGUIM_POINT_SECRET_KEY_2026");
-const SUPER_ADMIN_EMAIL = "henriquepaiva128@gmail.com";
-
-export async function GET() {
-  const token = cookies().get("session_token")?.value;
-  if (!token) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  }
-
+export async function GET(request) {
   try {
-    const { payload } = await jwtVerify(token, SECRET_KEY);
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
 
-    // pega email/role mesmo se teu payload estiver aninhado
-    const email = String(payload?.email || payload?.user?.email || "").toLowerCase();
-    const role = String(payload?.role || payload?.user?.role || "");
-    const tipo = String(payload?.tipo || payload?.user?.tipo || "");
-
-    const isSuperAdmin =
-      email === SUPER_ADMIN_EMAIL.toLowerCase() || role === "SUPER_ADMIN" || tipo === "super_admin";
-
-    if (!isSuperAdmin) {
-      return NextResponse.json({ error: "Acesso restrito ao Super Admin" }, { status: 403 });
+    if (!id) {
+      return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
     }
 
-    const empresas = await prisma.usuario.findMany({
-      where: {
-        OR: [
-          { tipo: "admin" },
-          { role: "ADMIN" },
-        ],
-      },
-      select: {
-        id: true,
-        nome: true,
-        email: true,
-        statusAssinatura: true,
-        stripeCustomerId: true,
-        criadoEm: true,
-      },
-      orderBy: { criadoEm: "desc" },
+    // ✅ O segredo está aqui: buscar na tabela EMPRESA
+    const empresa = await prisma.empresa.findUnique({
+      where: { id: Number(id) },
     });
 
-    return NextResponse.json(empresas);
-  } catch (e) {
-    return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+    if (!empresa) {
+      return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 });
+    }
+
+    // Devolve os dados REAIS do banco de dados (ativo e pagoAte)
+    return NextResponse.json({
+      id: empresa.id,
+      nome: empresa.nome,
+      ativo: empresa.ativo, // Este é o campo que o teu AdminPage usa
+      pagoAte: empresa.pagoAte,
+      plano: empresa.plano
+    });
+
+  } catch (error) {
+    console.error("Erro na API empresa:", error);
+    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }
