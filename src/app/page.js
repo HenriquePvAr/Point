@@ -57,12 +57,16 @@ export default function Page() {
   // ==========================================================
   // ✅ PERMISSÕES / ROTAS (SUPER ADMIN x ADMIN)
   // ==========================================================
-const SUPER_ADMIN_EMAIL = "henriquepaiva128@gmail.com";
+  const SUPER_ADMIN_EMAIL = "henriquepaiva128@gmail.com";
+  const normEmail = (e) => (e || "").trim().toLowerCase();
 
-const isSuperAdmin = (u) =>
-  (u?.email || "").toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase(); // só esse email
+  const isSuperAdmin = (u) => {
+    const emailOk = normEmail(u?.email) === normEmail(SUPER_ADMIN_EMAIL);
+    const roleOk = u?.role === "SUPER_ADMIN" || u?.tipo === "super_admin"; // fallback
+    return emailOk && roleOk; // ✅ precisa ser OS DOIS
+  };
 
-const isAdmin = (u) => u?.role === "ADMIN"; // (opcional) pode deixar assim
+  const isAdmin = (u) => u?.role === "ADMIN" || u?.tipo === "admin"; // fallback
 
   // ==========================================================
   // 1. ESTADOS DE AUTENTICAÇÃO E USUÁRIO
@@ -272,7 +276,8 @@ const isAdmin = (u) => u?.role === "ADMIN"; // (opcional) pode deixar assim
 
     async function checarSessao() {
       try {
-        const res = await fetch("/api/auth");
+        // ✅ evita cache e dados velhos
+        const res = await fetch("/api/auth", { cache: "no-store" });
         const data = await res.json();
 
         if (data.success && data.user) {
@@ -430,27 +435,32 @@ const isAdmin = (u) => u?.role === "ADMIN"; // (opcional) pode deixar assim
         const novaLista = salvarContaNoDispositivo(data.user, contasSalvas);
         localStorage.setItem("point_user", JSON.stringify(data.user));
 
+        // ✅ SUPER ADMIN (email + role)
         if (isSuperAdmin(data.user)) {
           atualizarUltimoUso(data.user.email, novaLista);
           router.push("/super-admin");
           return;
         }
 
+        // ✅ ADMIN
         if (isAdmin(data.user)) {
           atualizarUltimoUso(data.user.email, novaLista);
           router.push("/admin");
           return;
         }
 
+        // Primeiro acesso (Troca de senha)
         if (data.user.primeiroAcesso) {
           setUser(data.user);
           setModalNovaSenha(true);
           return;
         }
 
+        // Funcionário comum
         setUser(data.user);
         carregarDadosUsuario(data.user.id, data.user.empresaId);
         atualizarUltimoUso(data.user.email, novaLista);
+        return;
       } else {
         setErroLogin(data.message || "E-mail ou senha inválidos.");
         setSenha("");
