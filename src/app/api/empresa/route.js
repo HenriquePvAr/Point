@@ -1,18 +1,52 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { cookies } from "next/headers";
+import { jwtVerify } from "jose";
 
-export async function GET(req) {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
+const SECRET_KEY = new TextEncoder().encode("PINGUIM_POINT_SECRET_KEY_2026");
+const SUPER_ADMIN_EMAIL = "henriquepaiva128@gmail.com";
 
-  if (!id) return NextResponse.json({ error: "ID necessário" }, { status: 400 });
+export async function GET() {
+  const token = cookies().get("session_token")?.value;
+  if (!token) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
 
   try {
-    const empresa = await prisma.empresa.findUnique({
-      where: { id: id }
+    const { payload } = await jwtVerify(token, SECRET_KEY);
+
+    // pega email/role mesmo se teu payload estiver aninhado
+    const email = String(payload?.email || payload?.user?.email || "").toLowerCase();
+    const role = String(payload?.role || payload?.user?.role || "");
+    const tipo = String(payload?.tipo || payload?.user?.tipo || "");
+
+    const isSuperAdmin =
+      email === SUPER_ADMIN_EMAIL.toLowerCase() || role === "SUPER_ADMIN" || tipo === "super_admin";
+
+    if (!isSuperAdmin) {
+      return NextResponse.json({ error: "Acesso restrito ao Super Admin" }, { status: 403 });
+    }
+
+    const empresas = await prisma.usuario.findMany({
+      where: {
+        OR: [
+          { tipo: "admin" },
+          { role: "ADMIN" },
+        ],
+      },
+      select: {
+        id: true,
+        nome: true,
+        email: true,
+        statusAssinatura: true,
+        stripeCustomerId: true,
+        criadoEm: true,
+      },
+      orderBy: { criadoEm: "desc" },
     });
-    return NextResponse.json(empresa);
-  } catch (error) {
-    return NextResponse.json({ error: "Erro ao buscar empresa" }, { status: 500 });
+
+    return NextResponse.json(empresas);
+  } catch (e) {
+    return NextResponse.json({ error: "Token inválido" }, { status: 401 });
   }
 }
