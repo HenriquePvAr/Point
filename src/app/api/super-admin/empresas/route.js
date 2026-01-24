@@ -1,55 +1,43 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
 
-// ✅ evita cache nessa rota (super admin precisa sempre atualizado)
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-const SECRET_KEY = new TextEncoder().encode("PINGUIM_POINT_SECRET_KEY_2026");
-const SUPER_ADMIN_EMAIL = "henriquepaiva128@gmail.com";
+export const dynamic = "force-dynamic"; // Garante que não faz cache
 
 export async function GET() {
-  // 1) Segurança: verificar sessão
-  const token = cookies().get("session_token")?.value;
-  if (!token) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  }
-
   try {
-    // 2) Validar JWT
-    const { payload } = await jwtVerify(token, SECRET_KEY);
-
-    const email = String(payload?.email || "").toLowerCase();
-
-    // 3) Garantir que só o super admin entra
-    if (email !== SUPER_ADMIN_EMAIL) {
-      return NextResponse.json(
-        { error: "Acesso restrito ao Super Admin" },
-        { status: 403 }
-      );
-    }
-
-    // 4) Buscar todas as empresas (usuários tipo 'admin' = donos)
-    const empresas = await prisma.usuario.findMany({
-      where: { tipo: "admin" },
-      select: {
-        id: true,
-        nome: true,
-        email: true,
-        statusAssinatura: true,
-        stripeCustomerId: true,
-        criadoEm: true,
-      },
+    const empresas = await prisma.empresa.findMany({
       orderBy: { criadoEm: "desc" },
+      include: {
+        _count: {
+          select: { usuarios: true }, // Conta quantos funcionários
+        },
+        pagamentos: {
+          select: { status: true }, // Busca apenas o status para contarmos manualmente
+        },
+      },
     });
 
-    return NextResponse.json(empresas);
-  } catch (e) {
-    return NextResponse.json(
-      { error: "Token inválido ou expirado" },
-      { status: 401 }
-    );
+    // Formata os dados para o front-end
+    const dadosFormatados = empresas.map((emp) => {
+      const parcelasPagas = emp.pagamentos.filter(
+        (p) => p.status === "PAID" || p.status === "CONFIRMED"
+      ).length;
+
+      return {
+        id: emp.id,
+        nome: emp.nome,
+        cnpj: emp.cnpj,
+        ativo: emp.ativo,
+        plano: emp.plano,
+        pagoAte: emp.pagoAte,
+        totalUsuarios: emp._count.usuarios,
+        parcelasPagas: parcelasPagas,
+      };
+    });
+
+    return NextResponse.json(dadosFormatados);
+  } catch (error) {
+    console.error("Erro ao listar empresas:", error);
+    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }
