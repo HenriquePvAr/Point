@@ -13,7 +13,12 @@ import {
   Search,
   LogOut,
   PlusCircle,
-  X
+  X,
+  Edit3,
+  Trash2,
+  History,
+  Plus,
+  Minus
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -27,15 +32,23 @@ export default function SuperAdminDashboard() {
   // Controle de Modais
   const [modalRenovar, setModalRenovar] = useState(null);
   const [modalNovo, setModalNovo] = useState(false);
+  const [modalEditar, setModalEditar] = useState(null);
+  const [modalHistorico, setModalHistorico] = useState(null);
   
   // Estados de Formulário
-  const [mesesParaAdicionar, setMesesParaAdicionar] = useState(1);
+  const [diasParaAjustar, setDiasParaAjustar] = useState(30);
+  const [historicoPagos, setHistoricoPagos] = useState([]);
   const [novoForm, setNovoForm] = useState({
     nomeEmpresa: "",
     cnpj: "",
     nomeAdmin: "",
     email: "",
     senha: ""
+  });
+  const [editForm, setEditForm] = useState({
+    id: "",
+    nome: "",
+    cnpj: ""
   });
 
   useEffect(() => {
@@ -79,6 +92,40 @@ export default function SuperAdminDashboard() {
     }
   }
 
+  async function handleEditarEmpresa(e) {
+    e.preventDefault();
+    const toastId = toast.loading("Atualizando dados...");
+    try {
+      const res = await fetch("/api/super-admin/empresas/editar", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) {
+        toast.success("Dados atualizados com sucesso!", { id: toastId });
+        setModalEditar(null);
+        carregarEmpresas();
+      } else {
+        toast.error("Erro ao atualizar dados.", { id: toastId });
+      }
+    } catch {
+      toast.error("Erro de conexão.", { id: toastId });
+    }
+  }
+
+  async function handleExcluir(id) {
+    if (!confirm("AVISO CRÍTICO: Isso excluirá a empresa, todos os funcionários e todos os registros de ponto permanentemente. Confirmar?")) return;
+    try {
+      const res = await fetch(`/api/super-admin/empresas/excluir?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Empresa removida do ecossistema.");
+        carregarEmpresas();
+      }
+    } catch {
+      toast.error("Erro ao excluir empresa.");
+    }
+  }
+
   async function toggleStatus(empresa) {
     const novoStatus = !empresa.ativo;
     try {
@@ -99,33 +146,46 @@ export default function SuperAdminDashboard() {
     }
   }
 
-  async function handleRenovar() {
+  async function handleRenovar(tipo) {
     if (!modalRenovar) return;
+    const dias = tipo === 'add' ? diasParaAjustar : -diasParaAjustar;
+    
     try {
       const res = await fetch("/api/super-admin/renovar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ empresaId: modalRenovar.id, meses: mesesParaAdicionar }),
+        body: JSON.stringify({ empresaId: modalRenovar.id, dias: dias }),
       });
       const data = await res.json();
       if (data.success) {
-        toast.success(`Renovado para ${modalRenovar.nome}!`);
+        toast.success(`Tempo ajustado para ${modalRenovar.nome}!`);
         setModalRenovar(null);
         carregarEmpresas();
       } else {
-        toast.error("Erro ao renovar.");
+        toast.error("Erro ao ajustar tempo.");
       }
     } catch {
       toast.error("Erro ao conectar.");
     }
   }
 
-  // LOGOUT CORRIGIDO: Limpa cookies e força reload para a Home
+  async function abrirHistorico(empId) {
+    setModalHistorico(empId);
+    setHistoricoPagos([]);
+    try {
+      const res = await fetch(`/api/super-admin/pagamentos/historico?empresaId=${empId}`);
+      const data = await res.json();
+      setHistoricoPagos(data);
+    } catch {
+      toast.error("Erro ao carregar histórico.");
+    }
+  }
+
   async function handleLogout() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
       document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT; samesite=lax";
-      window.location.href = "/"; // Força o redirecionamento limpando o estado do Next.js
+      window.location.href = "/";
     } catch (error) {
       window.location.href = "/";
     }
@@ -231,20 +291,44 @@ export default function SuperAdminDashboard() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 md:pl-6 border-t md:border-t-0 md:border-l border-gray-100 pt-4 md:pt-0">
+                <div className="flex items-center gap-2 md:pl-6 border-t md:border-t-0 md:border-l border-gray-100 pt-4 md:pt-0 flex-wrap">
                   <button 
                     onClick={() => toggleStatus(emp)}
-                    className={`w-10 h-10 rounded flex items-center justify-center transition ${emp.ativo ? "text-red-500 hover:bg-red-50" : "text-green-600 hover:bg-green-50"}`}
+                    className={`w-10 h-10 rounded flex items-center justify-center transition border ${emp.ativo ? "text-red-500 border-red-100 hover:bg-red-50" : "text-green-600 border-green-100 hover:bg-green-50"}`}
                     title={emp.ativo ? "Bloquear" : "Liberar"}
                   >
-                    {emp.ativo ? <Lock size={20} /> : <Unlock size={20} />}
+                    {emp.ativo ? <Lock size={18} /> : <Unlock size={18} />}
+                  </button>
+
+                  <button 
+                    onClick={() => { setEditForm({ id: emp.id, nome: emp.nome, cnpj: emp.cnpj || "" }); setModalEditar(true); }}
+                    className="w-10 h-10 rounded border border-blue-100 text-blue-500 flex items-center justify-center hover:bg-blue-50"
+                    title="Editar Empresa"
+                  >
+                    <Edit3 size={18} />
+                  </button>
+
+                  <button 
+                    onClick={() => abrirHistorico(emp.id)}
+                    className="w-10 h-10 rounded border border-purple-100 text-purple-500 flex items-center justify-center hover:bg-purple-50"
+                    title="Histórico de Pagamentos"
+                  >
+                    <History size={18} />
                   </button>
 
                   <button 
                     onClick={() => setModalRenovar(emp)}
-                    className="h-10 px-4 rounded text-blue-600 font-bold text-xs hover:bg-blue-50 flex items-center gap-2 border border-blue-100"
+                    className="h-10 px-4 rounded text-green-600 font-bold text-xs hover:bg-green-50 flex items-center gap-2 border border-green-100"
                   >
-                    <Clock size={16} /> RENOVAR
+                    <Clock size={16} /> DIAS
+                  </button>
+
+                  <button 
+                    onClick={() => handleExcluir(emp.id)}
+                    className="w-10 h-10 rounded border border-gray-200 text-gray-400 flex items-center justify-center hover:text-red-600 hover:bg-red-50"
+                    title="Excluir Empresa"
+                  >
+                    <Trash2 size={18} />
                   </button>
                 </div>
               </div>
@@ -264,7 +348,7 @@ export default function SuperAdminDashboard() {
 
             <form onSubmit={handleCriarEmpresa} className="space-y-4">
               <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1">DADOS DA EMPRESA</label>
+                <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase tracking-widest">Dados da Empresa</label>
                 <input required placeholder="Nome Fantasia" className="w-full p-2.5 border rounded text-sm focus:border-blue-500 outline-none" 
                   value={novoForm.nomeEmpresa} onChange={e => setNovoForm({...novoForm, nomeEmpresa: e.target.value})} />
                 <input placeholder="CNPJ (opcional)" className="w-full p-2.5 border rounded text-sm mt-2 focus:border-blue-500 outline-none" 
@@ -272,8 +356,8 @@ export default function SuperAdminDashboard() {
               </div>
 
               <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase">Dono / Administrador</label>
-                <input required placeholder="Nome do Admin" className="w-full p-2.5 border rounded text-sm focus:border-blue-500 outline-none" 
+                <label className="text-[10px] font-bold text-gray-400 block mb-1 uppercase tracking-widest">Acesso do Administrador</label>
+                <input required placeholder="Nome do Dono" className="w-full p-2.5 border rounded text-sm focus:border-blue-500 outline-none" 
                   value={novoForm.nomeAdmin} onChange={e => setNovoForm({...novoForm, nomeAdmin: e.target.value})} />
                 <input required type="email" placeholder="E-mail de acesso" className="w-full p-2.5 border rounded text-sm mt-2 focus:border-blue-500 outline-none" 
                   value={novoForm.email} onChange={e => setNovoForm({...novoForm, email: e.target.value})} />
@@ -290,22 +374,73 @@ export default function SuperAdminDashboard() {
         </div>
       )}
 
-      {/* MODAL: RENOVAR */}
+      {/* MODAL: EDITAR */}
+      {modalEditar && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-sm p-6">
+            <h3 className="text-lg font-black text-[#071d41] mb-4">EDITAR EMPRESA</h3>
+            <form onSubmit={handleEditarEmpresa} className="space-y-4">
+              <input required placeholder="Nome Fantasia" className="w-full p-2.5 border rounded text-sm outline-none focus:border-blue-500" 
+                value={editForm.nome} onChange={e => setEditForm({...editForm, nome: e.target.value})} />
+              <input placeholder="CNPJ" className="w-full p-2.5 border rounded text-sm outline-none focus:border-blue-500" 
+                value={editForm.cnpj} onChange={e => setEditForm({...editForm, cnpj: e.target.value})} />
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setModalEditar(null)} className="flex-1 py-2 text-sm font-bold text-gray-500">Voltar</button>
+                <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded text-sm font-bold">SALVAR</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RENOVAR (DIAS) */}
       {modalRenovar && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-lg w-full max-w-xs p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-blue-600 mb-4">Adicionar Tempo</h3>
-            <p className="text-xs text-gray-500 mb-4">Empresa: <b>{modalRenovar.nome}</b></p>
-            <div className="grid grid-cols-3 gap-2 mb-6">
-              {[1, 6, 12].map(m => (
-                <button key={m} onClick={() => setMesesParaAdicionar(m)} className={`py-2 rounded border text-xs font-bold transition ${mesesParaAdicionar === m ? "bg-blue-600 text-white" : "bg-gray-50 hover:bg-gray-100"}`}>
-                  {m}M
-                </button>
-              ))}
+          <div className="bg-white rounded-lg w-full max-w-xs p-6 shadow-2xl text-center">
+            <h3 className="text-lg font-black text-gray-800 mb-1">AJUSTAR TEMPO</h3>
+            <p className="text-xs text-gray-400 mb-4">{modalRenovar.nome}</p>
+            
+            <input 
+              type="number" 
+              value={diasParaAjustar} 
+              onChange={e => setDiasParaAjustar(Number(e.target.value))} 
+              className="w-full p-3 border rounded-lg text-center font-black text-xl mb-4 focus:border-blue-500 outline-none" 
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => handleRenovar('sub')} className="flex items-center justify-center gap-1 py-3 bg-red-50 text-red-600 rounded-lg font-bold border border-red-100 hover:bg-red-100 transition"><Minus size={16}/> RETIRAR</button>
+              <button onClick={() => handleRenovar('add')} className="flex items-center justify-center gap-1 py-3 bg-green-600 text-white rounded-lg font-bold shadow-lg hover:bg-green-700 transition"><Plus size={16}/> SOMAR</button>
             </div>
-            <div className="flex gap-2">
-              <button onClick={() => setModalRenovar(null)} className="flex-1 py-2 text-xs font-bold text-gray-400">Voltar</button>
-              <button onClick={handleRenovar} className="flex-1 py-2 bg-green-600 text-white rounded text-xs font-bold">CONFIRMAR</button>
+            
+            <button onClick={() => setModalRenovar(null)} className="mt-4 text-[10px] text-gray-400 uppercase font-bold tracking-widest">Fechar</button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: HISTÓRICO */}
+      {modalHistorico && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-md p-6 max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-black text-[#071d41]">HISTÓRICO DE PAGOS</h3>
+              <button onClick={() => setModalHistorico(null)} className="text-gray-400 hover:text-red-500"><X /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+              {historicoPagos.length > 0 ? historicoPagos.map((p, i) => (
+                <div key={i} className="flex justify-between items-center p-4 border rounded-xl bg-gray-50 border-gray-100">
+                  <div>
+                    <p className="font-black text-gray-800 text-sm">R$ {p.valor.toFixed(2)}</p>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{new Date(p.data).toLocaleDateString()}</p>
+                  </div>
+                  <span className="text-[9px] bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-black uppercase tracking-widest">{p.metodo}</span>
+                </div>
+              )) : (
+                <div className="text-center py-10 opacity-30">
+                  <DollarSign size={48} className="mx-auto mb-2" />
+                  <p className="text-sm font-bold italic">Nenhum registro encontrado.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
