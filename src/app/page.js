@@ -12,6 +12,9 @@ import { toast } from "sonner";
 export default function Page() {
   const router = useRouter();
 
+  // ✅ Coloque seu e-mail real aqui (fallback caso role não venha certo)
+  const SUPER_ADMIN_EMAIL = "henriquepaiva128@gmail.com";
+
   // ==========================================================
   // 1. ESTADOS DE AUTENTICAÇÃO E USUÁRIO
   // ==========================================================
@@ -107,7 +110,7 @@ export default function Page() {
       email: c?.email || "",
       tipo: c?.tipo || "user",
       role: c?.role || "FUNCIONARIO",
-      empresaId: c?.empresaId, 
+      empresaId: c?.empresaId,
       lastUsed: c?.lastUsed || 0,
     };
   }
@@ -145,13 +148,13 @@ export default function Page() {
     try {
       // 1. Busca mensagens (Mural) - AGORA COM FILTRO DE EMPRESA
       const urlMsg = empresaId ? `/api/mensagens?empresaId=${empresaId}` : null;
-      
+
       let dataMsg = [];
       if (urlMsg) {
-          const resMsg = await fetch(urlMsg);
-          dataMsg = await resMsg.json();
+        const resMsg = await fetch(urlMsg);
+        dataMsg = await resMsg.json();
       }
-      
+
       const msgObj = {};
       if (Array.isArray(dataMsg)) {
         dataMsg.forEach(m => {
@@ -167,11 +170,10 @@ export default function Page() {
 
       // 3. Busca consumos (Cantina) - AGORA COM FILTRO DE EMPRESA
       if (empresaId) {
-          const resConsumo = await fetch(`/api/consumos?userId=${userId}&empresaId=${empresaId}`);
-          const dataConsumo = await resConsumo.json();
-          setMeusConsumos(Array.isArray(dataConsumo) ? dataConsumo : []);
+        const resConsumo = await fetch(`/api/consumos?userId=${userId}&empresaId=${empresaId}`);
+        const dataConsumo = await resConsumo.json();
+        setMeusConsumos(Array.isArray(dataConsumo) ? dataConsumo : []);
       }
-
     } catch (error) {
       console.error("Erro ao buscar dados do usuário", error);
       toast.error("Erro ao sincronizar dados.");
@@ -204,12 +206,19 @@ export default function Page() {
         if (data.success && data.user) {
           // Sempre atualiza a lista do PC
           const listaAtualizada = salvarContaNoDispositivo(data.user, salvos);
-          
+
           // Salva sessão atual
           localStorage.setItem("point_user", JSON.stringify(data.user));
 
-          // Verifica se é Admin
-          if (data.user.role === "ADMIN" || data.user.role === "SUPER_ADMIN" || data.user.tipo === "admin") {
+          // ✅ SUPER ADMIN -> /super-admin
+          if (data.user.role === "SUPER_ADMIN" || data.user.email === SUPER_ADMIN_EMAIL) {
+            atualizarUltimoUso(data.user.email, listaAtualizada);
+            router.push("/super-admin");
+            return;
+          }
+
+          // ✅ ADMIN -> /admin
+          if (data.user.role === "ADMIN" || data.user.tipo === "admin") {
             atualizarUltimoUso(data.user.email, listaAtualizada);
             router.push("/admin");
             return;
@@ -218,7 +227,7 @@ export default function Page() {
           setUser(data.user);
           // Carrega dados usando a função definida acima
           carregarDadosUsuario(data.user.id, data.user.empresaId);
-          
+
           atualizarUltimoUso(data.user.email, listaAtualizada);
           toast.success(`Bem-vindo de volta, ${data.user.nome.split(" ")[0]}!`);
         } else {
@@ -350,10 +359,17 @@ export default function Page() {
       if (data.success) {
         // 1. Salva conta no PC e Atualiza 'point_user'
         const novaLista = salvarContaNoDispositivo(data.user, contasSalvas);
-        localStorage.setItem("point_user", JSON.stringify(data.user)); 
+        localStorage.setItem("point_user", JSON.stringify(data.user));
 
-        // 2. Verifica se é Admin
-        if (data.user.role === "ADMIN" || data.user.role === "SUPER_ADMIN" || data.user.tipo === "admin") {
+        // ✅ SUPER ADMIN -> /super-admin
+        if (data.user.role === "SUPER_ADMIN" || data.user.email === SUPER_ADMIN_EMAIL) {
+          atualizarUltimoUso(data.user.email, novaLista);
+          router.push("/super-admin");
+          return;
+        }
+
+        // ✅ ADMIN -> /admin
+        if (data.user.role === "ADMIN" || data.user.tipo === "admin") {
           atualizarUltimoUso(data.user.email, novaLista);
           router.push("/admin");
           return;
@@ -369,7 +385,7 @@ export default function Page() {
         // 4. Login Funcionário: Carrega dados passando a Empresa
         setUser(data.user);
         carregarDadosUsuario(data.user.id, data.user.empresaId);
-        
+
         atualizarUltimoUso(data.user.email, novaLista);
       } else {
         setErroLogin(data.message || "E-mail ou senha inválidos.");
@@ -384,7 +400,7 @@ export default function Page() {
 
   function handleLogout() {
     document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT";
-    localStorage.removeItem("point_user"); 
+    localStorage.removeItem("point_user");
 
     setUser(null);
     setSenha("");
@@ -706,47 +722,59 @@ export default function Page() {
                       if (!t) return true;
                       return (c.nome || "").toLowerCase().includes(t) || (c.email || "").toLowerCase().includes(t);
                     })
-                    .map((conta, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => selecionarContaSalva(conta)}
-                        className={`flex items-center justify-between p-3 border rounded cursor-pointer transition group shadow-sm hover:shadow-md hover:border-blue-300 relative ${
-                          temaEscuro ? "bg-[#1f1f1f] border-gray-700 hover:bg-[#2a2a2a]" : "bg-white border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
-                            conta.role === "ADMIN" || conta.tipo === "admin" ? "bg-[#071d41] text-white" : temaEscuro ? "bg-white/10 text-gray-100" : "bg-blue-100 text-blue-700"
-                          }`}>
-                            {getIniciais(conta.nome)}
-                          </div>
+                    .map((conta, idx) => {
+                      const isSuper = (conta.role === "SUPER_ADMIN" || conta.email === SUPER_ADMIN_EMAIL);
+                      const isAdmin = (conta.role === "ADMIN" || conta.tipo === "admin");
 
-                          <div className="text-left">
-                            <div className="flex items-center gap-2">
-                              <p className={`font-bold leading-tight text-sm ${temaEscuro ? "text-gray-100" : "text-gray-800"}`}>
-                                {conta.nome}
-                              </p>
-                              {(conta.role === "ADMIN" || conta.tipo === "admin") && (
-                                <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-bold">
-                                  ADMIN
-                                </span>
-                              )}
-                            </div>
-                            <p className={`text-xs ${temaEscuro ? "text-gray-400" : "text-gray-500"}`}>{conta.email}</p>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={(e) => removerContaSalva(e, conta)}
-                          className={`p-2 rounded-full transition ${
-                            temaEscuro ? "text-gray-500 hover:text-red-300 hover:bg-red-500/10" : "text-gray-300 hover:text-red-500 hover:bg-red-50"
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => selecionarContaSalva(conta)}
+                          className={`flex items-center justify-between p-3 border rounded cursor-pointer transition group shadow-sm hover:shadow-md hover:border-blue-300 relative ${
+                            temaEscuro ? "bg-[#1f1f1f] border-gray-700 hover:bg-[#2a2a2a]" : "bg-white border-gray-200 hover:bg-gray-50"
                           }`}
-                          title="Remover desta lista"
                         >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    ))}
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
+                              isSuper ? "bg-purple-700 text-white"
+                              : isAdmin ? "bg-[#071d41] text-white"
+                              : temaEscuro ? "bg-white/10 text-gray-100" : "bg-blue-100 text-blue-700"
+                            }`}>
+                              {getIniciais(conta.nome)}
+                            </div>
+
+                            <div className="text-left">
+                              <div className="flex items-center gap-2">
+                                <p className={`font-bold leading-tight text-sm ${temaEscuro ? "text-gray-100" : "text-gray-800"}`}>
+                                  {conta.nome}
+                                </p>
+
+                                {isSuper ? (
+                                  <span className="bg-purple-100 text-purple-800 text-[10px] px-1.5 py-0.5 rounded border border-purple-200 font-bold">
+                                    SUPER
+                                  </span>
+                                ) : isAdmin ? (
+                                  <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1.5 py-0.5 rounded border border-yellow-200 font-bold">
+                                    ADMIN
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className={`text-xs ${temaEscuro ? "text-gray-400" : "text-gray-500"}`}>{conta.email}</p>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={(e) => removerContaSalva(e, conta)}
+                            className={`p-2 rounded-full transition ${
+                              temaEscuro ? "text-gray-500 hover:text-red-300 hover:bg-red-500/10" : "text-gray-300 hover:text-red-500 hover:bg-red-50"
+                            }`}
+                            title="Remover desta lista"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      );
+                    })}
                 </div>
 
                 <div
