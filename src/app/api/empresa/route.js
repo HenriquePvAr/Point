@@ -9,28 +9,34 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
-    if (!id) return NextResponse.json({ error: "ID faltante" }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
+    }
 
+    // Como o ID é STRING, usamos diretamente sem Number()
     const empresa = await prisma.empresa.findUnique({
-      where: { id: Number(id) },
+      where: { id: id },
     });
 
-    if (!empresa) return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 });
+    if (!empresa) {
+      console.error(`Empresa com ID ${id} não encontrada no banco.`);
+      return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 });
+    }
 
-    // ✅ LÓGICA DE DESTRAVAMENTO:
-    // Se você marcou 'ativo' no Super Admin, nós ignoramos a data para permitir o acesso manual.
-    // O sistema só bloqueia se 'ativo' for false.
-    const statusFinal = empresa.ativo === true;
-
+    // Retorna os dados garantindo que o 'ativo' seja um booleano puro
     return NextResponse.json({
       id: empresa.id,
       nome: empresa.nome,
-      ativo: statusFinal, 
-      pagoAte: empresa.pagoAte, // Mesmo que seja null, o 'ativo' manda
+      ativo: empresa.ativo === true, 
+      pagoAte: empresa.pagoAte,
       plano: empresa.plano
     });
 
   } catch (error) {
-    return NextResponse.json({ error: "Erro" }, { status: 500 });
+    console.error("ERRO CRÍTICO NA API EMPRESA:", error);
+    return NextResponse.json(
+      { error: "Erro interno no servidor", detalhes: error.message }, 
+      { status: 500 }
+    );
   }
 }
