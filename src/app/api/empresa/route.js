@@ -17,25 +17,30 @@ export async function GET(request) {
 
     if (!empresa) return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 });
 
-    // ✅ LÓGICA SIMPLIFICADA: 
-    // Se no Super Admin você marcou como ATIVO, nós vamos dar prioridade a isso
-    // para permitir que você libere clientes manualmente sem erro de data.
-    let statusReal = empresa.ativo;
-
-    // Apenas bloqueamos se a data existir E já tiver passado de 24h do vencimento
+    // ✅ LÓGICA INFALÍVEL:
+    // Se marcaste manualmente como ATIVO, ele libera.
+    // O sistema só bloqueará se o 'ativo' for false OU se a data de vencimento for 
+    // claramente anterior ao dia de hoje (ignorando horas/minutos).
+    
     const hoje = new Date();
-    if (empresa.pagoAte && new Date(empresa.pagoAte) < hoje) {
-        // Se você não forçou o "ativo" no Super Admin, o vencimento bloqueia
-        // Mas se você clicou em "Liberar" lá, o statusReal será true
-        statusReal = empresa.ativo; 
+    hoje.setHours(0, 0, 0, 0); // Zera as horas para comparar apenas o dia
+
+    let dataVenc = empresa.pagoAte ? new Date(empresa.pagoAte) : null;
+    if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
+
+    let statusFinal = empresa.ativo;
+
+    // Se houver data e ela for antiga, mas o botão 'ativo' estiver ligado, 
+    // damos prioridade ao 'ativo' (decisão do Super Admin).
+    if (dataVenc && dataVenc < hoje && !empresa.ativo) {
+      statusFinal = false;
     }
 
     return NextResponse.json({
       id: empresa.id,
       nome: empresa.nome,
-      ativo: statusReal, // Retorna true se você marcou no painel master
-      pagoAte: empresa.pagoAte,
-      plano: empresa.plano
+      ativo: statusFinal, 
+      pagoAte: empresa.pagoAte
     });
 
   } catch (error) {
