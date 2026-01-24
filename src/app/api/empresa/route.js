@@ -9,7 +9,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
-    if (!id) return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
+    if (!id) return NextResponse.json({ error: "ID faltante" }, { status: 400 });
 
     const empresa = await prisma.empresa.findUnique({
       where: { id: Number(id) },
@@ -17,33 +17,20 @@ export async function GET(request) {
 
     if (!empresa) return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 });
 
-    // ✅ LÓGICA INFALÍVEL:
-    // Se marcaste manualmente como ATIVO, ele libera.
-    // O sistema só bloqueará se o 'ativo' for false OU se a data de vencimento for 
-    // claramente anterior ao dia de hoje (ignorando horas/minutos).
-    
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0); // Zera as horas para comparar apenas o dia
-
-    let dataVenc = empresa.pagoAte ? new Date(empresa.pagoAte) : null;
-    if (dataVenc) dataVenc.setHours(0, 0, 0, 0);
-
-    let statusFinal = empresa.ativo;
-
-    // Se houver data e ela for antiga, mas o botão 'ativo' estiver ligado, 
-    // damos prioridade ao 'ativo' (decisão do Super Admin).
-    if (dataVenc && dataVenc < hoje && !empresa.ativo) {
-      statusFinal = false;
-    }
+    // ✅ LÓGICA DE DESTRAVAMENTO:
+    // Se você marcou 'ativo' no Super Admin, nós ignoramos a data para permitir o acesso manual.
+    // O sistema só bloqueia se 'ativo' for false.
+    const statusFinal = empresa.ativo === true;
 
     return NextResponse.json({
       id: empresa.id,
       nome: empresa.nome,
       ativo: statusFinal, 
-      pagoAte: empresa.pagoAte
+      pagoAte: empresa.pagoAte, // Mesmo que seja null, o 'ativo' manda
+      plano: empresa.plano
     });
 
   } catch (error) {
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+    return NextResponse.json({ error: "Erro" }, { status: 500 });
   }
 }

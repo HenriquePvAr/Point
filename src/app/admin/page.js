@@ -146,29 +146,25 @@ export default function AdminPage() {
   }
 
 async function atualizarEmpresa(idFinal) {
-    try {
-      // 1. Adicionamos um "t=" (timestamp) para forçar o navegador a buscar dados novos, sem cache
-      const resEmp = await fetch(`/api/empresa?id=${idFinal}&t=${Date.now()}`);
-      const dadosEmpresa = await resEmp.json();
-      
-      console.log("Status recebido do banco:", dadosEmpresa.ativo);
+  try {
+    // O timestamp (?t=...) evita que o navegador pegue a resposta antiga
+    const res = await fetch(`/api/empresa?id=${idFinal}&t=${Date.now()}`);
+    const dados = await res.json();
+    
+    console.log("DADOS DO BANCO:", dados); // Olhe isso no F12 do navegador
 
-      // 2. Atualiza o estado da empresa
-      setEmpresa(dadosEmpresa);
+    setEmpresa(dados);
 
-      // 3. SE O BANCO DISSER QUE ESTÁ ATIVO, FORÇAMOS A TELA A MUDAR
-      if (dadosEmpresa.ativo === true) {
-        toast.success("Assinatura validada! Liberando acesso...");
-        setView("dashboard"); // Isso faz o painel aparecer na hora
-      } else {
-        toast.error("O sistema ainda consta como pendente. Aguarde 1 minuto.");
-      }
-    } catch (e) {
-      console.warn("Falha ao atualizar empresa:", e);
-      toast.error("Erro ao conectar com o servidor.");
+    if (dados.ativo === true) {
+      toast.success("Acesso Liberado com sucesso!");
+      setView("dashboard"); // ✅ Isso tira você da tela de bloqueio e te joga no painel
+    } else {
+      toast.error("O banco ainda diz que está bloqueado.");
     }
+  } catch (e) {
+    toast.error("Erro de conexão.");
   }
-
+}
   // ==================================================================================
   // 3. MÓDULO: CONSUMOS
   // ==================================================================================
