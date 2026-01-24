@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Shield, Search, Ban, CheckCircle, Clock, LogOut, DollarSign, Calendar } from "lucide-react";
 import { toast } from "sonner";
@@ -11,36 +11,53 @@ export default function SuperAdminPage() {
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState("");
 
-  // ✅ Logout REAL (evita loop)
-  const logoutEVoltar = useCallback((msg) => {
-    if (msg) toast.error(msg);
+  // trava pra não disparar logout/toast em loop
+  const logoutLock = useRef(false);
 
-    // apaga cookie da sessão (mesmo que HttpOnly não apague, isso ajuda quando é cookie normal)
-    document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT";
+  // ✅ Logout REAL (front + backend) -> evita loop com cookie HttpOnly
+  const logoutEVoltar = useCallback(
+    async (msg) => {
+      if (logoutLock.current) return;
+      logoutLock.current = true;
 
-    // remove sessão local
-    localStorage.removeItem("point_user");
+      if (msg) toast.error(msg);
 
-    // manda pra home sem ficar voltando
-    router.replace("/");
-  }, [router]);
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+          cache: "no-store",
+        });
+      } catch {}
+
+      // limpa sessão local (ajuda na UI)
+      localStorage.removeItem("point_user");
+
+      // evita "voltar" e causar loop
+      router.replace("/");
+    },
+    [router]
+  );
 
   async function carregarEmpresas() {
+    if (logoutLock.current) return;
+
     setLoading(true);
     try {
-      const res = await fetch("/api/super-admin/empresas", { cache: "no-store" });
+      const res = await fetch("/api/super-admin/empresas", {
+        cache: "no-store",
+        credentials: "include",
+      });
 
-      // Se a API já retorna 401/403, cai aqui
       if (res.status === 401 || res.status === 403) {
-        logoutEVoltar("Acesso restrito ao Super Admin");
+        await logoutEVoltar("Acesso restrito ao Super Admin");
         return;
       }
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
-      // Se a API retorna 200 com { error }, tratamos também
       if (data?.error) {
-        logoutEVoltar(data.error);
+        await logoutEVoltar(data.error);
         return;
       }
 
@@ -58,15 +75,19 @@ export default function SuperAdminPage() {
   }, []);
 
   async function alterarStatus(id, novoStatus) {
+    if (logoutLock.current) return;
+
     try {
       const res = await fetch("/api/super-admin/status", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status: novoStatus }),
+        credentials: "include",
+        cache: "no-store",
       });
 
       if (res.status === 401 || res.status === 403) {
-        logoutEVoltar("Acesso restrito ao Super Admin");
+        await logoutEVoltar("Acesso restrito ao Super Admin");
         return;
       }
 
@@ -85,6 +106,8 @@ export default function SuperAdminPage() {
   }
 
   async function darDiasGratis(id) {
+    if (logoutLock.current) return;
+
     const diasStr = prompt("Quantos dias de teste quer adicionar?", "7");
     if (!diasStr) return;
 
@@ -99,10 +122,12 @@ export default function SuperAdminPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, dias }),
+        credentials: "include",
+        cache: "no-store",
       });
 
       if (res.status === 401 || res.status === 403) {
-        logoutEVoltar("Acesso restrito ao Super Admin");
+        await logoutEVoltar("Acesso restrito ao Super Admin");
         return;
       }
 
@@ -135,7 +160,6 @@ export default function SuperAdminPage() {
           <p className="text-gray-400 text-sm mt-1">Gestão global de assinaturas e empresas</p>
         </div>
 
-        {/* ✅ Sair agora limpa sessão (sem loop) */}
         <button
           onClick={() => logoutEVoltar("Sessão finalizada.")}
           className="flex items-center gap-2 text-sm bg-red-900/30 hover:bg-red-900/50 text-red-200 px-4 py-2 rounded transition"
@@ -144,7 +168,6 @@ export default function SuperAdminPage() {
         </button>
       </header>
 
-      {/* KPI CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <CardKpi titulo="Total Empresas" valor={empresas.length} icon={<Search />} cor="bg-blue-900/20 text-blue-400" />
         <CardKpi
@@ -167,7 +190,6 @@ export default function SuperAdminPage() {
         />
       </div>
 
-      {/* LISTA */}
       <div className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700">
         <div className="p-4 border-b border-gray-700 flex justify-between items-center">
           <h2 className="font-bold text-lg">Empresas Cadastradas</h2>
@@ -218,6 +240,7 @@ export default function SuperAdminPage() {
                         <CheckCircle size={16} />
                       </button>
                     )}
+
                     {empresa.statusAssinatura !== "inativo" && (
                       <button
                         onClick={() => alterarStatus(empresa.id, "inativo")}
@@ -227,6 +250,7 @@ export default function SuperAdminPage() {
                         <Ban size={16} />
                       </button>
                     )}
+
                     <button
                       onClick={() => darDiasGratis(empresa.id)}
                       title="Dar Trial Extra"
@@ -271,6 +295,7 @@ function BadgeStatus({ status }) {
     inativo: "bg-red-500/20 text-red-400 border-red-500/30",
     trial: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
   };
+
   return (
     <span className={`px-2 py-1 rounded text-xs font-bold border ${cores[status] || cores.inativo} uppercase`}>
       {status}
