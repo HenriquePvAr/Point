@@ -6,51 +6,51 @@ export async function POST(req) {
   try {
     const { empresaId, plano } = await req.json();
 
-    // 1. Busca a empresa
+    // 1. Busca a empresa no banco de dados
     const empresa = await prisma.empresa.findUnique({ where: { id: empresaId } });
     if (!empresa) return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 });
 
-    // 2. Verifica/Cria cliente no Asaas
+    // 2. Verifica se a empresa já tem um ID de cliente no Asaas
     let asaasId = empresa.asaasCustomerId;
 
     if (!asaasId) {
         console.log("Criando cliente no Asaas...");
         asaasId = await criarClienteAsaas(empresa);
         
-        // Salva o ID na empresa para não criar de novo depois
+        // Salva o ID do Asaas na empresa para evitar duplicatas
         await prisma.empresa.update({
             where: { id: empresa.id },
             data: { asaasCustomerId: asaasId }
         });
     }
 
-    // 3. Define valor (R$ 160,00 ou R$ 1600,00)
+    // 3. Define o valor baseado no plano (R$ 160,00 ou R$ 1600,00)
     const valor = plano === 'ANUAL' ? 1600 : 160;
 
-    // 4. Gera o Pix no Asaas
+    // 4. Gera a cobrança Pix no Asaas
     console.log("Gerando Pix no Asaas...");
     const dadosPix = await criarCobrancaPix(asaasId, valor);
 
-    // ==========================================================
-    // ✅ PASSO ESSENCIAL QUE FALTA: SALVAR NO SEU BANCO DE DADOS
-    // ==========================================================
-    // Sem isso, o Webhook não consegue liberar o acesso depois!
+    // 5. Salva o registro do pagamento como PENDENTE no banco de dados
+    // Isso é vital para que o Webhook consiga validar o pagamento depois
     await prisma.pagamento.create({
       data: {
         empresaId: empresa.id,
         valor: valor,
         metodo: "PIX",
         status: "PENDING",
-        asaasId: dadosPix.id, // ID da cobrança que vem do Asaas
+        asaasId: dadosPix.id, // ID da cobrança retornado pelo Asaas
       }
     });
 
+    // 6. Retorna os dados para o front-end
     return NextResponse.json({ 
       success: true, 
       id: dadosPix.id,
-      invoiceUrl: dadosPix.invoiceUrl, // Link da fatura
-      pixCopiaCola: dadosPix.pixCopiaCola, // Código copia e cola
-      pixQrCode: dadosPix.pixQrCode // Base64 do QR Code
+      invoiceUrl: dadosPix.invoiceUrl, 
+      pixCopiaCola: dadosPix.pixCopiaCola, 
+      // CORREÇÃO: Usando qrCodeImage que vem do seu lib/asaas.js
+      pixQrCode: dadosPix.qrCodeImage 
     });
 
   } catch (error) {
