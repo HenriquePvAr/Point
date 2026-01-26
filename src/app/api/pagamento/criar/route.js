@@ -17,7 +17,7 @@ export async function POST(req) {
         console.log("Criando cliente no Asaas...");
         asaasId = await criarClienteAsaas(empresa);
         
-        // Salva o ID do Asaas na empresa para evitar duplicatas
+        // Salva o ID do Asaas na empresa para evitar duplicatas nas próximas vezes
         await prisma.empresa.update({
             where: { id: empresa.id },
             data: { asaasCustomerId: asaasId }
@@ -32,7 +32,7 @@ export async function POST(req) {
     const dadosPix = await criarCobrancaPix(asaasId, valor);
 
     // 5. Salva o registro do pagamento como PENDENTE no banco de dados
-    // Isso é vital para que o Webhook consiga validar o pagamento depois
+    // Isso é o que permite ao Webhook identificar o pagamento depois
     await prisma.pagamento.create({
       data: {
         empresaId: empresa.id,
@@ -44,13 +44,13 @@ export async function POST(req) {
     });
 
     // 6. Retorna os dados para o front-end
+    // A correção principal está na linha 'pixQrCode: dadosPix.qrCodeImage'
     return NextResponse.json({ 
       success: true, 
       id: dadosPix.id,
-      invoiceUrl: dadosPix.invoiceUrl, 
-      pixCopiaCola: dadosPix.pixCopiaCola, 
-      // CORREÇÃO: Usando qrCodeImage que vem do seu lib/asaas.js
-      pixQrCode: dadosPix.qrCodeImage 
+      invoiceUrl: dadosPix.invoiceUrl,
+      pixCopiaCola: dadosPix.pixCopiaCola,
+      pixQrCode: dadosPix.qrCodeImage // <--- AQUI: ajustado para bater com o retorno do asaas.js
     });
 
   } catch (error) {
