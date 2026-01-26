@@ -1,0 +1,16 @@
+{
+  "appId": "com.point.app",
+  "appName": "Point",
+  "webDir": "public",
+  "server": {
+    "url": "https://point-eight.vercel.app",
+    "cleartext": true
+  },
+  "android": {
+    "build/gradle": {
+      "dependencies": {
+        "classpath": "com.android.tools.build:gradle:8.0.0"
+      }
+    }
+  }
+}

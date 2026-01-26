@@ -1410,7 +1410,7 @@ function ItemDia({ dia, cores, temaEscuro, mensagemSalva, onSalvarMensagem }) {
     <div className={`border-b ${cores.border}`}>
       <div
         onClick={() => setAberto(!aberto)}
-        className={`flex items-center justify-between p-4 cursor-pointer hover:bg-opacity-50 transition ${temaEscuro ? "hover:bg-gray-800" : "hover:bg-blue-50"}`}
+        className={`flex flex-wrap gap-2 items-center justify-between p-4 cursor-pointer hover:bg-opacity-50 transition ${temaEscuro ? "hover:bg-gray-800" : "hover:bg-blue-50"}`}
       >
         <div className="flex flex-col min-w-0">
           <span className={`font-bold text-sm ${cores.text}`}>{dia.dataFormatada}</span>

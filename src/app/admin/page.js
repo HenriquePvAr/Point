@@ -46,6 +46,9 @@ import {
   DollarSign,
   Image as ImageIcon,
 
+  // ✅ MENU (NOVO)
+  Menu,
+
   CreditCard,
   AlertTriangle,
   Copy,
@@ -92,6 +95,9 @@ export default function AdminPage() {
 
   const [mostrarNotificacoes, setMostrarNotificacoes] = useState(false);
   const [notificacoes, setNotificacoes] = useState([]);
+
+  // ✅ MENU MOBILE (NOVO)
+  const [menuMobileAberto, setMenuMobileAberto] = useState(false);
 
   const [termoBusca, setTermoBusca] = useState("");
   const [usuarioSelecionado, setUsuarioSelecionado] = useState(null);
@@ -145,26 +151,26 @@ export default function AdminPage() {
     }
   }
 
-async function atualizarEmpresa(idFinal) {
-  try {
-    // O timestamp (?t=...) evita que o navegador pegue a resposta antiga
-    const res = await fetch(`/api/empresa?id=${idFinal}&t=${Date.now()}`);
-    const dados = await res.json();
-    
-    console.log("DADOS DO BANCO:", dados); // Olhe isso no F12 do navegador
+  async function atualizarEmpresa(idFinal) {
+    try {
+      // O timestamp (?t=...) evita que o navegador pegue a resposta antiga
+      const res = await fetch(`/api/empresa?id=${idFinal}&t=${Date.now()}`);
+      const dados = await res.json();
 
-    setEmpresa(dados);
+      console.log("DADOS DO BANCO:", dados); // Olhe isso no F12 do navegador
 
-    if (dados.ativo === true) {
-      toast.success("Acesso Liberado com sucesso!");
-      setView("dashboard"); // ✅ Isso tira você da tela de bloqueio e te joga no painel
-    } else {
-      toast.error("O banco ainda diz que está bloqueado.");
+      setEmpresa(dados);
+
+      if (dados.ativo === true) {
+        toast.success("Acesso Liberado com sucesso!");
+        setView("dashboard"); // ✅ Isso tira você da tela de bloqueio e te joga no painel
+      } else {
+        toast.error("O banco ainda diz que está bloqueado.");
+      }
+    } catch (e) {
+      toast.error("Erro de conexão.");
     }
-  } catch (e) {
-    toast.error("Erro de conexão.");
   }
-}
   // ==================================================================================
   // 3. MÓDULO: CONSUMOS
   // ==================================================================================
@@ -847,18 +853,50 @@ async function atualizarEmpresa(idFinal) {
   // 9. RENDER
   // ==================================================================================
   return (
-    <div className="min-h-screen bg-gray-50 font-sans flex text-gray-800">
+    <div className="min-h-screen bg-gray-50 font-sans flex flex-col md:flex-row text-gray-800 relative">
+      
+      {/* 1. HEADER MOBILE (SÓ APARECE NO CELULAR) */}
+      <div className="md:hidden bg-[#071d41] text-white p-4 flex items-center justify-between sticky top-0 z-50 shadow-md w-full print:hidden">
+        <span className="font-bold text-xl">Point Admin</span>
+        <button onClick={() => setMenuMobileAberto(!menuMobileAberto)}>
+          {menuMobileAberto ? <X size={24}/> : <Menu size={24}/>}
+        </button>
+      </div>
+
+      {/* 2. OVERLAY ESCURO (FUNDO PRETO QUANDO ABRE MENU NO CELULAR) */}
+      {menuMobileAberto && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden animate-fade-in"
+          onClick={() => setMenuMobileAberto(false)}
+        ></div>
+      )}
+
       {/* ======================= SIDEBAR ======================= */}
-      <aside className="w-64 bg-[#071d41] text-white flex flex-col fixed h-full z-10 shadow-xl print:hidden">
-        <div className="p-6 border-b border-blue-900">
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-50 w-64 bg-[#071d41] text-white flex flex-col shadow-xl print:hidden
+          transform transition-transform duration-300 ease-in-out
+          ${menuMobileAberto ? "translate-x-0" : "-translate-x-full"} 
+          md:translate-x-0
+        `}
+      >
+        <div className="p-6 border-b border-blue-900 flex justify-between items-center">
           <h1 className="text-2xl font-black tracking-tight">
             Pinguim
             <br />
             <span className="text-blue-300">Admin</span>
           </h1>
+
+          {/* Botão fechar extra para mobile */}
+          <button
+            onClick={() => setMenuMobileAberto(false)}
+            className="md:hidden text-gray-400"
+          >
+            <X size={24} />
+          </button>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           <BotaoMenu
             icon={<LayoutDashboard size={20} />}
             text="Visão Geral"
@@ -867,6 +905,7 @@ async function atualizarEmpresa(idFinal) {
               setView("dashboard");
               setUsuarioSelecionado(null);
               setRelatorioDetalhado(null);
+              setMenuMobileAberto(false);
             }}
           />
 
@@ -878,6 +917,7 @@ async function atualizarEmpresa(idFinal) {
               setView("relatorios");
               setUsuarioSelecionado(null);
               setRelatorioDetalhado(null);
+              setMenuMobileAberto(false);
             }}
           />
 
@@ -889,6 +929,7 @@ async function atualizarEmpresa(idFinal) {
               setView("consumos");
               setUsuarioSelecionado(null);
               setRelatorioDetalhado(null);
+              setMenuMobileAberto(false);
             }}
           />
 
@@ -900,6 +941,7 @@ async function atualizarEmpresa(idFinal) {
               setView("assinatura");
               setUsuarioSelecionado(null);
               setRelatorioDetalhado(null);
+              setMenuMobileAberto(false);
             }}
           />
         </nav>
@@ -915,7 +957,7 @@ async function atualizarEmpresa(idFinal) {
       </aside>
 
       {/* ======================= CONTEÚDO ======================= */}
-      <main className="ml-64 flex-1 p-8 print:ml-0 print:p-0 print:w-full">
+      <main className="flex-1 p-4 md:p-8 md:ml-64 w-full overflow-x-hidden print:ml-0 print:p-0 print:w-full">
         {/* 🔴 TRAVA: se empresa estiver bloqueada, só permite a aba de assinatura */}
         {!loading && empresaBloqueada && view !== "assinatura" ? (
           <div className="flex flex-col items-center justify-center h-[70vh] text-center animate-fade-in">
