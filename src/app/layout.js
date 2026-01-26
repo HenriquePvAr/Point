@@ -7,10 +7,26 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata = {
   title: "Pinguim Manoa - Point",
   description: "Sistema de Gestão de Ponto",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Pinguim Manoa - Point",
+    statusBarStyle: "default",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 // REMOVEMOS O 'export const viewport' DAQUI PARA NÃO DAR CONFLITO
 // VAMOS INJETAR DIRETO NO HTML ABAIXO
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: "#1351b4",
+};
 
 export default function RootLayout({ children }) {
   return (
