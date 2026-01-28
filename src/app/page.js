@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+// Importação do Capacitor Geolocation adicionada
+import { Geolocation } from '@capacitor/geolocation'; 
 import {
   Clock,
   LogIn,
@@ -578,53 +580,53 @@ export default function Page() {
   async function confirmarRegistro() {
     if (!tipoSelecionado) return;
 
-    if (!("geolocation" in navigator)) {
-      return toast.error("Seu dispositivo não suporta Geolocalização.");
-    }
-
     setStatus({ tipo: "loading", texto: "Obtendo localização..." });
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        setStatus({ tipo: "loading", texto: "Registrando..." });
+    try {
+      // ✅ ATUALIZAÇÃO: Uso do plugin Capacitor Geolocation
+      const coordinates = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0
+      });
+      
+      const { latitude, longitude } = coordinates.coords;
+      setStatus({ tipo: "loading", texto: "Registrando..." });
 
-        try {
-          const res = await fetch("/api/ponto", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              usuarioId: user.id,
-              nome: user.nome,
-              tipo: tipoSelecionado,
-              latitude,
-              longitude,
-            }),
-          });
-          const data = await res.json();
+      const res = await fetch("/api/ponto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          usuarioId: user.id,
+          nome: user.nome,
+          tipo: tipoSelecionado,
+          latitude,
+          longitude,
+        }),
+      });
+      const data = await res.json();
 
-          if (data.success) {
-            toast.success(`${tipoSelecionado} registrado com sucesso!`);
-            await carregarDadosUsuario(user.id, user.empresaId);
-            setTipoSelecionado(null);
-          } else {
-            toast.error(data.message);
-          }
-        } catch {
-          toast.error("Erro de conexão.");
-        }
-
-        setTimeout(() => setStatus(null), 1000);
-      },
-      (error) => {
-        console.error("Erro GPS:", error);
-        setStatus(null);
-        if (error.code === 1) toast.warning("Permita a localização no navegador para registrar o ponto.");
-        else if (error.code === 2) toast.error("Sinal de GPS indisponível.");
-        else toast.error("Tempo limite do GPS esgotado. Tente novamente.");
-      },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-    );
+      if (data.success) {
+        toast.success(`${tipoSelecionado} registrado com sucesso!`);
+        await carregarDadosUsuario(user.id, user.empresaId);
+        setTipoSelecionado(null);
+      } else {
+        toast.error(data.message);
+      }
+    } catch (error) {
+      console.error("Erro GPS/Registro:", error);
+      
+      // Tratamento de erros
+      if (error.code === 1 || error.message?.includes("denied")) {
+         toast.warning("Permita a localização no app para registrar o ponto.");
+      } else if (error.code === 2) {
+         toast.error("Sinal de GPS indisponível.");
+      } else {
+         toast.error("Erro ao obter localização ou conexão.");
+      }
+    } finally {
+      setTimeout(() => setStatus(null), 1000);
+    }
   }
 
   async function salvarMensagem(dataIso, texto) {
